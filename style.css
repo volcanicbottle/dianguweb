@@ -11,6 +11,22 @@
   --poet-purple: #6b4f8a;
 }
 
+/* 生僻字兜底字体：只含数据中实际出现的 88 个扩展区汉字（rare1=Noto Serif SC 子集，
+   rare2=遍黑体 P1 子集），unicode-range 命中才会下载；数据扩充后用
+   pipeline/subset_rare_fonts.py 重新生成 */
+@font-face {
+  font-family: "RareHan";
+  src: url("vendor/rare1.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+3529,U+3559,U+37FC,U+3A16,U+3B20,U+3B23,U+3CFD,U+3D89,U+3E0C,U+3EDE,U+4149,U+430C,U+4337,U+433D,U+4360,U+4366,U+43F6,U+452E,U+4561,U+45D6,U+46CF,U+4729,U+4759,U+475F,U+4A8D,U+4BC4,U+4C00,U+4C5C,U+4D19,U+20E95,U+21E23,U+23659,U+23E23,U+26221,U+2A8FB,U+2AA58,U+2B128,U+2B138,U+2B4E7,U+2B5AE,U+2B627,U+2C35B,U+2C618,U+2C7FD,U+2C8D9,U+2C907,U+2CA0E,U+2CB3B,U+2CBB1,U+2CD0A,U+2CE23;
+}
+@font-face {
+  font-family: "RareHan";
+  src: url("vendor/rare2.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+20AE4,U+22AEC,U+230C1,U+237BB,U+23A3C,U+25B1E,U+25B20,U+25BBE,U+2620C,U+2620F,U+26C0F,U+26D9F,U+273D7,U+278F4,U+27BBC,U+27C49,U+27F7C,U+283C8,U+28C42,U+28E6E,U+2961F,U+29C18,U+2A84B,U+2B042,U+2B362,U+2B3BA,U+2B3D0,U+2B40C,U+2B418,U+2B587,U+2B61E,U+2B6DB,U+2B6F3,U+2B6F6,U+2B6F8,U+2B72A,U+2B72C;
+}
+
 * { box-sizing: border-box; margin: 0; }
 
 html, body { height: 100%; }
@@ -20,7 +36,7 @@ body {
   flex-direction: column;
   background: var(--paper);
   color: var(--ink);
-  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "RareHan", serif;
 }
 
 header {
