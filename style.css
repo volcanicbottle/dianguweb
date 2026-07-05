@@ -154,3 +154,5 @@ mark.verse {
 /* 报错反馈（共性见文件顶部输入框/按钮规则） */
 #fb-text { width: 100%; margin: 6px 0; padding: 6px 10px; resize: vertical; }
 #fb-send { padding: 5px 14px; }
+#search-results li.poet-hit { color: var(--poet-purple); font-weight: 600; }
+#search-results li.poet-hit .sub { color: var(--poet-purple); opacity: 0.75; }

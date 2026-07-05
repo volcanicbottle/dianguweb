@@ -478,17 +478,17 @@ function debounce(fn, ms) {
 searchInput.addEventListener("input", debounce(() => {
   const q = searchInput.value.trim();
   if (!q) { searchResults.hidden = true; return; }
-  /* 精确 > 前缀 > 包含；同级内 诗人 > 典故 > 别名 > 诗，避免别名挤掉诗人 */
+  /* 诗人永远置顶；其余按 精确 > 前缀 > 包含，同级内 典故 > 别名 > 诗 */
   const rank = e => {
     const m = e.text === q ? 0 : e.text.startsWith(q) ? 1 : 2;
-    const k = e.id[0] === "o" ? 0 : e.sub === "典故" ? 1 : e.id[0] === "a" ? 2 : 3;
-    return m * 4 + k;
+    const k = e.sub === "典故" ? 0 : e.id[0] === "a" ? 1 : 2;
+    return e.id[0] === "o" ? m : 8 + m * 4 + k;
   };
   const hits = INDEX.filter(e => e.text.includes(q))
     .sort((a, b) => rank(a) - rank(b)).slice(0, 12);
   if (!hits.length) { searchResults.hidden = true; return; }
   searchResults.innerHTML = hits.map((h, i) =>
-    `<li data-i="${i}">${esc(h.text)}<span class="sub">${esc(h.sub)}</span></li>`).join("");
+    `<li data-i="${i}"${h.id[0] === "o" ? ' class="poet-hit"' : ""}>${esc(h.text)}<span class="sub">${esc(h.sub)}</span></li>`).join("");
   searchResults.hidden = false;
   searchResults.querySelectorAll("li").forEach((li, i) => {
     li.addEventListener("click", () => {
