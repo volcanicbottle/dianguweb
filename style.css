@@ -136,9 +136,12 @@ mark.verse {
 
 /* ── 手机：详情栏变底部抽屉 ── */
 @media (max-width: 760px) {
+  body { height: 100dvh; }
   header { flex-wrap: wrap; gap: 8px; }
   .search-wrap { margin-left: 0; flex: 1; }
   #search { width: 100%; }
+  /* iOS 输入框字号 <16px 聚焦时会整页自动放大 */
+  #search, #catalog-filter, #fb-text { font-size: 16px; }
   main { flex-direction: column; }
   #panel {
     width: 100%;

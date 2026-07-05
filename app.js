@@ -8,7 +8,8 @@ const gRoot = svg.append("g");
 const gLinks = gRoot.append("g");
 const gNodes = gRoot.append("g");
 
-const zoom = d3.zoom().scaleExtent([0.3, 4])
+/* clickDistance：手指点按有几像素抖动，不设则被当作拖拽而吞掉 click */
+const zoom = d3.zoom().scaleExtent([0.3, 4]).clickDistance(10)
   .on("start", () => clearTimeout(focusTimer))
   .on("zoom", (ev) => gRoot.attr("transform", ev.transform));
 svg.call(zoom);
@@ -245,6 +246,8 @@ function onNodeClick(ev, d) {
     showPoem(d.id);
   }
   update();
+  focusNode(d.id);
+  revealPanel();
 }
 
 /* 首次出现的节点从哪里长出来：枢纽典故走金角螺线，其余从已缓存的邻居身旁绽放 */
@@ -274,7 +277,7 @@ function seedPosition(n) {
 }
 
 function dragger() {
-  return d3.drag()
+  return d3.drag().clickDistance(10)
     .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
     .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
     .on("end", (ev, d) => {
@@ -285,6 +288,12 @@ function dragger() {
 
 /* ── 详情栏 ── */
 const panel = document.getElementById("panel-content");
+const MOBILE = window.matchMedia("(max-width: 760px)");
+
+/* 手机上页面可能处于放大平移状态，详情抽屉在视野外，点击后拉回视野 */
+function revealPanel() {
+  if (MOBILE.matches) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, m =>
@@ -441,10 +450,16 @@ function focusNode(id) {
   clearTimeout(focusTimer);
   focusTimer = setTimeout(() => {
     const n = nodeCache.get(id);
-    if (!n) return;
+    if (!n || !sim) return;
     const [W, H] = dims();
-    const k = d3.zoomTransform(svg.node()).k;
-    const t = d3.zoomIdentity.translate(W / 2 - k * n.x, H / 2 - k * n.y).scale(k);
+    /* 缩放到能装下全部可见节点（只缩小不放大），围绕整体中心，避免展开后跑出画布 */
+    const ns = sim.nodes(), pad = 60;
+    const x0 = d3.min(ns, d => d.x) - pad, x1 = d3.max(ns, d => d.x) + pad;
+    const y0 = d3.min(ns, d => d.y) - pad, y1 = d3.max(ns, d => d.y) + pad;
+    const fitK = Math.min(W / (x1 - x0), H / (y1 - y0));
+    const k = Math.max(0.3, Math.min(d3.zoomTransform(svg.node()).k, fitK));
+    const t = d3.zoomIdentity
+      .translate(W / 2 - k * (x0 + x1) / 2, H / 2 - k * (y0 + y1) / 2).scale(k);
     svg.transition().duration(600).call(zoom.transform, t);
   }, 700);
 }
