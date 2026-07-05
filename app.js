@@ -37,8 +37,8 @@ function pushTo(map, key, val) {
 }
 
 Promise.all([
-  fetch("data/graph.json").then(r => { if (!r.ok) throw new Error("graph.json " + r.status); return r.json(); }),
-  fetch("data/details.json").then(r => { if (!r.ok) throw new Error("details.json " + r.status); return r.json(); }),
+  fetch("data/graph.json?v=7").then(r => { if (!r.ok) throw new Error("graph.json " + r.status); return r.json(); }),
+  fetch("data/details.json?v=7").then(r => { if (!r.ok) throw new Error("details.json " + r.status); return r.json(); }),
 ]).then(([g, d]) => {
   GRAPH = g;
   DETAILS = d;
