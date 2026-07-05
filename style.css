@@ -63,6 +63,8 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
 #search-results li { padding: 7px 12px; font-size: 13px; cursor: pointer; }
 #search-results li:hover { background: var(--paper); }
 #search-results .sub { color: var(--ink-faint); font-size: 11px; margin-left: 8px; }
+#search-results li.poet-hit { color: var(--poet-purple); font-weight: 600; }
+#search-results li.poet-hit .sub { color: var(--poet-purple); opacity: 0.75; }
 
 /* 描边按钮共性（回到初始/典故目录/报错提交） */
 #reset, #catalog-btn, #fb-send {
@@ -79,7 +81,8 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
 
 main { flex: 1; display: flex; min-height: 0; }
 
-/* translateZ(0)：iOS Safari 对无显式尺寸的 SVG 只重绘部分区域，强制独立合成层整层重绘 */
+/* translateZ(0)：iOS Safari 对无显式尺寸的 SVG 只重绘部分区域，强制独立合成层整层重绘；
+   与 app.js sizeCanvas() 的显式尺寸属性是同一修复的两半 */
 #canvas { flex: 1; min-width: 0; cursor: grab; transform: translateZ(0); }
 #canvas:active { cursor: grabbing; }
 
@@ -158,5 +161,3 @@ mark.verse {
 /* 报错反馈（共性见文件顶部输入框/按钮规则） */
 #fb-text { width: 100%; margin: 6px 0; padding: 6px 10px; resize: vertical; }
 #fb-send { padding: 5px 14px; }
-#search-results li.poet-hit { color: var(--poet-purple); font-weight: 600; }
-#search-results li.poet-hit .sub { color: var(--poet-purple); opacity: 0.75; }

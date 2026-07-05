@@ -8,17 +8,27 @@ const gRoot = svg.append("g");
 const gLinks = gRoot.append("g");
 const gNodes = gRoot.append("g");
 
+/* 版本号只写在 index.html 的 <script src="app.js?v=N"> 上，数据请求继承它，
+   保证 JSON 与解析它的 JS 永不脱节；升级只改 index.html 一处 */
+const VQ = (() => {
+  const v = new URL(document.currentScript.src).searchParams.get("v");
+  return v ? "?v=" + v : "";
+})();
+
 /* iOS Safari 对无显式尺寸属性的 SVG 只重绘初始区域，展开到区域外的内容不刷新；
-   显式同步 width/height 属性（flex-basis 为 0%，不会反过来影响布局） */
+   显式同步 width/height 属性（flex-basis 为 0%，不会反过来影响布局）。
+   与 style.css 中 #canvas 的 translateZ(0) 是同一修复的两半 */
 function sizeCanvas() {
-  const el = svg.node();
-  svg.attr("width", el.clientWidth).attr("height", el.clientHeight);
+  const [W, H] = dims();
+  svg.attr("width", W).attr("height", H);
 }
 new ResizeObserver(sizeCanvas).observe(svg.node());
 sizeCanvas();
 
-/* clickDistance：手指点按有几像素抖动，不设则被当作拖拽而吞掉 click */
-const zoom = d3.zoom().scaleExtent([0.3, 4]).clickDistance(10)
+const TAP_SLOP = 10;           // 手指点按有几像素抖动，超过此距离才算拖拽，否则吞掉 click
+const K_MIN = 0.3, K_MAX = 4;  // 画布缩放范围，fitVisible 的缩小下限与此保持一致
+
+const zoom = d3.zoom().scaleExtent([K_MIN, K_MAX]).clickDistance(TAP_SLOP)
   .on("start", () => clearTimeout(focusTimer))
   .on("zoom", (ev) => gRoot.attr("transform", ev.transform));
 svg.call(zoom);
@@ -46,8 +56,8 @@ function pushTo(map, key, val) {
 }
 
 Promise.all([
-  fetch("data/graph.json?v=8").then(r => { if (!r.ok) throw new Error("graph.json " + r.status); return r.json(); }),
-  fetch("data/details.json?v=8").then(r => { if (!r.ok) throw new Error("details.json " + r.status); return r.json(); }),
+  fetch("data/graph.json" + VQ).then(r => { if (!r.ok) throw new Error("graph.json " + r.status); return r.json(); }),
+  fetch("data/details.json" + VQ).then(r => { if (!r.ok) throw new Error("details.json " + r.status); return r.json(); }),
 ]).then(([g, d]) => {
   GRAPH = g;
   DETAILS = d;
@@ -255,7 +265,7 @@ function onNodeClick(ev, d) {
     showPoem(d.id);
   }
   update();
-  focusNode(d.id);
+  fitVisible();
   revealPanel();
 }
 
@@ -286,7 +296,7 @@ function seedPosition(n) {
 }
 
 function dragger() {
-  return d3.drag().clickDistance(10)
+  return d3.drag().clickDistance(TAP_SLOP)
     .on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
     .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
     .on("end", (ev, d) => {
@@ -297,11 +307,10 @@ function dragger() {
 
 /* ── 详情栏 ── */
 const panel = document.getElementById("panel-content");
-const MOBILE = window.matchMedia("(max-width: 760px)");
 
-/* 手机上页面可能处于放大平移状态，详情抽屉在视野外，点击后拉回视野 */
+/* 内容更新后把详情栏拉回视野（手机放大平移时在视野外；已可见则本身就是无操作） */
 function revealPanel() {
-  if (MOBILE.matches) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function esc(s) {
@@ -415,6 +424,7 @@ function showCatalog() {
   renderList("");
   document.getElementById("catalog-filter").addEventListener("input",
     debounce((ev) => renderList(ev.target.value.trim()), 120));
+  revealPanel();
 }
 document.getElementById("catalog-btn").addEventListener("click", showCatalog);
 
@@ -451,22 +461,22 @@ function gotoNode(id) {
   }
   selectedId = id;
   update();
-  focusNode(id);
+  fitVisible();
+  revealPanel();
 }
 
+/* 等布局稳定后，缩放视野装下全部可见节点（只缩小不放大），避免展开后跑出画布 */
 let focusTimer = null;
-function focusNode(id) {
+function fitVisible() {
   clearTimeout(focusTimer);
   focusTimer = setTimeout(() => {
-    const n = nodeCache.get(id);
-    if (!n || !sim) return;
+    if (!sim) return;
     const [W, H] = dims();
-    /* 缩放到能装下全部可见节点（只缩小不放大），围绕整体中心，避免展开后跑出画布 */
     const ns = sim.nodes(), pad = 60;
     const x0 = d3.min(ns, d => d.x) - pad, x1 = d3.max(ns, d => d.x) + pad;
     const y0 = d3.min(ns, d => d.y) - pad, y1 = d3.max(ns, d => d.y) + pad;
     const fitK = Math.min(W / (x1 - x0), H / (y1 - y0));
-    const k = Math.max(0.3, Math.min(d3.zoomTransform(svg.node()).k, fitK));
+    const k = Math.max(K_MIN, Math.min(d3.zoomTransform(svg.node()).k, fitK));
     const t = d3.zoomIdentity
       .translate(W / 2 - k * (x0 + x1) / 2, H / 2 - k * (y0 + y1) / 2).scale(k);
     svg.transition().duration(600).call(zoom.transform, t);
@@ -479,16 +489,23 @@ let INDEX = [];
 function buildSearchIndex() {
   INDEX = [];
   for (const [aid, a] of Object.entries(DETAILS.allusions)) {
-    INDEX.push({ text: a.title, sub: "典故", id: "a:" + aid });
+    INDEX.push({ text: a.title, sub: "典故", kind: "allusion", id: "a:" + aid });
     for (const alias of a.aliases)
-      INDEX.push({ text: alias, sub: "别名 · " + a.title, id: "a:" + aid });
+      INDEX.push({ text: alias, sub: "别名 · " + a.title, kind: "alias", id: "a:" + aid });
   }
   for (const [pid, p] of Object.entries(DETAILS.poems)) {
-    INDEX.push({ text: p.title, sub: "诗 · " + p.poet, id: "p:" + pid });
+    INDEX.push({ text: p.title, sub: "诗 · " + p.poet, kind: "poem", id: "p:" + pid });
   }
   for (const [oid, o] of Object.entries(DETAILS.poets || {})) {
-    INDEX.push({ text: o.name, sub: "诗人 · " + o.dynasty, id: "o:" + oid });
+    INDEX.push({ text: o.name, sub: "诗人 · " + o.dynasty, kind: "poet", id: "o:" + oid });
   }
+}
+
+/* 搜索排序：诗人永远置顶；其余按 精确 > 前缀 > 包含，同级内 典故 > 别名 > 诗 */
+const KIND_ORDER = { poet: 0, allusion: 1, alias: 2, poem: 3 };
+function searchScore(e, q) {
+  const m = e.text === q ? 0 : e.text.startsWith(q) ? 1 : 2;
+  return e.kind === "poet" ? m : 10 + m * 10 + KIND_ORDER[e.kind];
 }
 
 const searchInput = document.getElementById("search");
@@ -502,17 +519,13 @@ function debounce(fn, ms) {
 searchInput.addEventListener("input", debounce(() => {
   const q = searchInput.value.trim();
   if (!q) { searchResults.hidden = true; return; }
-  /* 诗人永远置顶；其余按 精确 > 前缀 > 包含，同级内 典故 > 别名 > 诗 */
-  const rank = e => {
-    const m = e.text === q ? 0 : e.text.startsWith(q) ? 1 : 2;
-    const k = e.sub === "典故" ? 0 : e.id[0] === "a" ? 1 : 2;
-    return e.id[0] === "o" ? m : 8 + m * 4 + k;
-  };
-  const hits = INDEX.filter(e => e.text.includes(q))
-    .sort((a, b) => rank(a) - rank(b)).slice(0, 12);
+  const scored = [];
+  for (const e of INDEX)
+    if (e.text.includes(q)) scored.push([searchScore(e, q), e]);
+  const hits = scored.sort((a, b) => a[0] - b[0]).slice(0, 12).map(s => s[1]);
   if (!hits.length) { searchResults.hidden = true; return; }
   searchResults.innerHTML = hits.map((h, i) =>
-    `<li data-i="${i}"${h.id[0] === "o" ? ' class="poet-hit"' : ""}>${esc(h.text)}<span class="sub">${esc(h.sub)}</span></li>`).join("");
+    `<li data-i="${i}"${h.kind === "poet" ? ' class="poet-hit"' : ""}>${esc(h.text)}<span class="sub">${esc(h.sub)}</span></li>`).join("");
   searchResults.hidden = false;
   searchResults.querySelectorAll("li").forEach((li, i) => {
     li.addEventListener("click", () => {
