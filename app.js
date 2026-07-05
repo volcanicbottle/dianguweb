@@ -8,6 +8,15 @@ const gRoot = svg.append("g");
 const gLinks = gRoot.append("g");
 const gNodes = gRoot.append("g");
 
+/* iOS Safari 对无显式尺寸属性的 SVG 只重绘初始区域，展开到区域外的内容不刷新；
+   显式同步 width/height 属性（flex-basis 为 0%，不会反过来影响布局） */
+function sizeCanvas() {
+  const el = svg.node();
+  svg.attr("width", el.clientWidth).attr("height", el.clientHeight);
+}
+new ResizeObserver(sizeCanvas).observe(svg.node());
+sizeCanvas();
+
 /* clickDistance：手指点按有几像素抖动，不设则被当作拖拽而吞掉 click */
 const zoom = d3.zoom().scaleExtent([0.3, 4]).clickDistance(10)
   .on("start", () => clearTimeout(focusTimer))
@@ -37,8 +46,8 @@ function pushTo(map, key, val) {
 }
 
 Promise.all([
-  fetch("data/graph.json?v=7").then(r => { if (!r.ok) throw new Error("graph.json " + r.status); return r.json(); }),
-  fetch("data/details.json?v=7").then(r => { if (!r.ok) throw new Error("details.json " + r.status); return r.json(); }),
+  fetch("data/graph.json?v=8").then(r => { if (!r.ok) throw new Error("graph.json " + r.status); return r.json(); }),
+  fetch("data/details.json?v=8").then(r => { if (!r.ok) throw new Error("details.json " + r.status); return r.json(); }),
 ]).then(([g, d]) => {
   GRAPH = g;
   DETAILS = d;

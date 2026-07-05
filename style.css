@@ -79,7 +79,8 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
 
 main { flex: 1; display: flex; min-height: 0; }
 
-#canvas { flex: 1; min-width: 0; cursor: grab; }
+/* translateZ(0)：iOS Safari 对无显式尺寸的 SVG 只重绘部分区域，强制独立合成层整层重绘 */
+#canvas { flex: 1; min-width: 0; cursor: grab; transform: translateZ(0); }
 #canvas:active { cursor: grabbing; }
 
 /* ── 星图节点 ── */
