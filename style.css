@@ -53,7 +53,7 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
 
 .search-wrap { position: relative; margin-left: auto; }
 /* 文本输入框共性（搜索/目录过滤/报错框） */
-#search, #catalog-filter, #fb-text {
+#search, #catalog-filter, #poet-filter, #fb-text {
   border: 1px solid var(--border);
   border-radius: 2px;
   background: #fffdf6;
@@ -61,7 +61,7 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
   font: inherit;
   font-size: 13px;
 }
-#search:focus, #catalog-filter:focus, #fb-text:focus { outline: none; border-color: var(--cinnabar); }
+#search:focus, #catalog-filter:focus, #poet-filter:focus, #fb-text:focus { outline: none; border-color: var(--cinnabar); }
 #search { width: 260px; padding: 6px 12px; font-size: 14px; }
 #search-results {
   position: absolute;
@@ -83,7 +83,7 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
 #search-results li.poet-hit .sub { color: var(--poet-purple); opacity: 0.75; }
 
 /* 描边按钮共性（回到初始/典故目录/报错提交） */
-#reset, #catalog-btn, #fb-send {
+#reset, #catalog-btn, #fb-send, #poet-more {
   padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -93,9 +93,24 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
   font-size: 13px;
   cursor: pointer;
 }
-#reset:hover, #catalog-btn:hover, #fb-send:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
+#reset:hover, #catalog-btn:hover, #fb-send:hover, #poet-more:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
 
-main { flex: 1; display: flex; min-height: 0; }
+main { flex: 1; display: flex; min-height: 0; position: relative; }
+
+/* 位置指示（浮在画布左上角） */
+#crumb {
+  position: absolute;
+  top: 10px; left: 14px;
+  z-index: 5;
+  font-size: 13px;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--paper-light) 80%, transparent);
+  padding: 3px 10px;
+  border-radius: 2px;
+}
+.crumb-link { color: var(--cinnabar); cursor: pointer; }
+.crumb-link:hover { text-decoration: underline; }
+.crumb-sep { margin: 0 6px; }
 
 /* translateZ(0)：iOS Safari 对无显式尺寸的 SVG 只重绘部分区域，强制独立合成层整层重绘；
    与 app.js sizeCanvas() 的显式尺寸属性是同一修复的两半 */
@@ -121,6 +136,11 @@ main { flex: 1; display: flex; min-height: 0; }
 .node.poet circle { fill: var(--paper-light); stroke: var(--poet-purple); stroke-width: 1.5; }
 .node.poet text { fill: var(--poet-purple); writing-mode: vertical-rl; letter-spacing: 1px; }
 .node.selected circle { stroke: var(--cinnabar); stroke-width: 2.5; }
+
+/* 聚焦模式：选中节点后，非邻域的节点与连线变淡 */
+.node, .link { transition: opacity .35s; }
+.node.dim { opacity: 0.18; }
+.link.dim { opacity: 0.12; }
 
 /* ── 右栏详情 ── */
 #panel {
@@ -161,7 +181,7 @@ mark.verse {
   .search-wrap { margin-left: 0; flex: 1; }
   #search { width: 100%; }
   /* iOS 输入框字号 <16px 聚焦时会整页自动放大 */
-  #search, #catalog-filter, #fb-text { font-size: 16px; }
+  #search, #catalog-filter, #poet-filter, #fb-text { font-size: 16px; }
   main { flex-direction: column; }
   #panel {
     width: 100%;
@@ -171,8 +191,9 @@ mark.verse {
   }
 }
 
-/* 典故目录过滤框（共性见文件顶部输入框规则） */
-#catalog-filter { width: 100%; margin: 8px 0; padding: 6px 10px; }
+/* 典故目录/诗人诗题过滤框（共性见文件顶部输入框规则） */
+#catalog-filter, #poet-filter { width: 100%; margin: 8px 0; padding: 6px 10px; }
+#poet-more { margin: 4px 0 2px; }
 
 /* 报错反馈（共性见文件顶部输入框/按钮规则） */
 #fb-text { width: 100%; margin: 6px 0; padding: 6px 10px; resize: vertical; }

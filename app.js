@@ -1,7 +1,7 @@
 /* 「用典」典故星图 —— 典故为主角：枢纽总览 / 典故⇄诗链式漫游 */
 "use strict";
 
-const GITHUB_REPO = "";   // 填 "用户名/仓库名"（如 "peng/diangu"）后启用详情栏报错区；留空隐藏
+const GITHUB_REPO = "volcanicbottle/dianguweb";   // 详情栏报错区提交到该仓库 Issue；留空隐藏
 
 const svg = d3.select("#canvas");
 const gRoot = svg.append("g");
@@ -46,7 +46,10 @@ const adj = {
   poetByPoem: new Map(),              // p:j -> o:k
   poemsByPoet: new Map(),             // o:k -> [p:j]
 };
-const expanded = { allusions: new Set(), poems: new Set(), poets: new Set() };
+const expanded = { allusions: new Set(), poems: new Set(), poets: new Set(),
+                   pinned: new Set() };   // pinned：被搜索/列表点选强制上图的诗（大诗人截断之外）
+const POET_CAP = 50;         // 大诗人锚定时图上最多画的诗数（按用典数取前 N；列表与搜索仍达全部）
+let poetShown = POET_CAP;    // 「再显示」按钮可逐批加大
 let nodesById = null;                 // id -> 图节点（O(1) 查找）
 let overviewIds = null;               // 总览枢纽星 id 集（数据静态，只算一次）
 
@@ -109,11 +112,16 @@ function visibleIds() {
     for (const id of overviewIds) vis.add(id);
   } else if (anchorNode.startsWith("o:")) {
     vis.add(anchorNode);
-    for (const p of adj.poemsByPoet.get(anchorNode) || []) vis.add(p);
+    const poems = adj.poemsByPoet.get(anchorNode) || [];
+    const shown = poems.length > poetShown
+      ? [...poems].sort((a, b) => poemDeg(b) - poemDeg(a)).slice(0, poetShown)
+      : poems;
+    for (const p of shown) vis.add(p);
   } else {
     vis.add(anchorNode);
     for (const p of adj.poemsByAllusion.get(anchorNode) || []) vis.add(p);
   }
+  for (const id of expanded.pinned) vis.add(id);
   let changed = true;
   while (changed) {
     changed = false;
@@ -140,7 +148,39 @@ function clearExploration() {
   expanded.allusions.clear();
   expanded.poems.clear();
   expanded.poets.clear();
+  expanded.pinned.clear();
 }
+
+/* 诗的用典数（大诗人截断排序用） */
+function poemDeg(p) { return (adj.allusionsByPoem.get(p) || []).length; }
+
+/* 位置指示：总览 › 锚定 › 选中项；前两级可点回退 */
+const crumbEl = document.getElementById("crumb");
+function crumbLabel(id) {
+  const n = nodesById.get(id);
+  return n ? (n.type === "allusion" ? shortLabel(n) : n.label) : id;
+}
+function renderCrumb() {
+  const parts = [`<span class="crumb-link" data-crumb="root">总览</span>`];
+  if (anchorNode)
+    parts.push(`<span class="crumb-link" data-crumb="anchor">${esc(crumbLabel(anchorNode))}</span>`);
+  if (selectedId && selectedId !== anchorNode)
+    parts.push(`<span>${esc(crumbLabel(selectedId))}</span>`);
+  crumbEl.innerHTML = parts.join(`<span class="crumb-sep">›</span>`);
+  crumbEl.hidden = parts.length === 1;
+}
+crumbEl.addEventListener("click", (ev) => {
+  const c = ev.target.dataset.crumb;
+  if (c === "root") {
+    setAnchor(null); selectedId = null;
+    panel.innerHTML = HINT_HTML;
+    update();
+  } else if (c === "anchor" && anchorNode) {
+    clearExploration(); selectedId = anchorNode;
+    if (anchorNode.startsWith("o:")) showPoet(anchorNode); else showAllusion(anchorNode);
+    update(); fitVisible();
+  }
+});
 
 function ensureCached(id) {
   if (!nodeCache.has(id)) {
@@ -155,6 +195,7 @@ function setAnchor(id) {
   const prev = anchorNode && nodeCache.get(anchorNode);
   if (prev) { prev.fx = null; prev.fy = null; }
   anchorNode = id;
+  poetShown = POET_CAP;
   clearExploration();
   if (id) {
     const n = ensureCached(id);
@@ -201,6 +242,14 @@ function render(nodes, links) {
     .data(links, d => (d.source.id || d.source) + "|" + (d.target.id || d.target));
   link.exit().remove();
   const linkSel = link.enter().append("line").attr("class", "link").merge(link);
+  /* 聚焦模式：有选中节点时，非其邻域的节点与连线变淡 */
+  const focus = selectedId && nodes.some(n => n.id === selectedId)
+    ? new Set([selectedId, ...neighbors(selectedId)]) : null;
+  linkSel.classed("dim", d => {
+    if (!focus) return false;
+    const s = d.source.id || d.source, t = d.target.id || d.target;
+    return !(focus.has(s) && focus.has(t));
+  });
 
   const node = gNodes.selectAll("g.node").data(nodes, d => d.id);
   node.exit().remove();
@@ -219,7 +268,9 @@ function render(nodes, links) {
         el.attr("dominant-baseline", "central").attr("font-size", Math.max(8, fs));
       }
     });
-  const nodeSel = enter.merge(node).attr("class", nodeClass);
+  const nodeSel = enter.merge(node).attr("class", nodeClass)
+    .classed("dim", d => focus && !focus.has(d.id));
+  renderCrumb();
 
   sim.on("tick", () => {
     linkSel
@@ -399,12 +450,27 @@ function showPoem(id) {
 function showPoet(id) {
   const o = DETAILS.poets[id.slice(2)];
   if (!o) return;
+  const capped = id === anchorNode && o.poems.length > poetShown;
   let html = `<h2>${esc(o.name)}</h2>` +
-    `<p class="meta">${esc(o.dynasty)} · 图中有典之诗 ${o.poems.length} 首</p>`;
-  for (const p of o.poems) {
-    html += gotoItem("p:" + p.id, p.title);
-  }
+    `<p class="meta">${esc(o.dynasty)} · 有典之诗 ${o.poems.length} 首` +
+    (capped ? `，图上先画用典最多的 ${poetShown} 首；列表与搜索可达全部，点选即上图` : "") +
+    `</p>`;
+  if (capped)
+    html += `<button id="poet-more" type="button">图上再显示 ${POET_CAP} 首</button>`;
+  if (o.poems.length > 30)
+    html += `<input id="poet-filter" type="text" placeholder="输入诗题过滤…" aria-label="过滤诗题">`;
+  html += `<div id="poet-list"></div>`;
   panel.innerHTML = html;
+  const listEl = document.getElementById("poet-list");
+  const renderList = (q) => {
+    const hits = q ? o.poems.filter(p => p.title.includes(q)) : o.poems;
+    listEl.innerHTML = hits.slice(0, 100).map(p => gotoItem("p:" + p.id, p.title)).join("") +
+      (hits.length > 100 ? `<p class="hint">还有 ${hits.length - 100} 首，请输入过滤…</p>` : "");
+  };
+  renderList("");
+  const filterEl = document.getElementById("poet-filter");
+  if (filterEl) filterEl.addEventListener("input",
+    debounce((ev) => renderList(ev.target.value.trim()), 120));
 }
 
 /* 典故目录：全部典故（按挂诗数降序），可过滤，点选直达 */
@@ -437,6 +503,13 @@ document.getElementById("catalog-btn").addEventListener("click", showCatalog);
 
 /* 详情栏内跳转与报错 */
 panel.addEventListener("click", (ev) => {
+  if (ev.target.id === "poet-more") {
+    poetShown += POET_CAP;
+    update();
+    fitVisible();
+    if (anchorNode) showPoet(anchorNode);
+    return;
+  }
   if (ev.target.id === "fb-send") {
     const box = document.getElementById("fb-text");
     const text = box.value.trim().slice(0, 800);
@@ -460,8 +533,12 @@ function gotoNode(id) {
     showAllusion(id);
   } else {
     if (!visibleIds().has(id)) {
-      const firstAllusion = (adj.allusionsByPoem.get(id) || [])[0];
-      if (firstAllusion) setAnchor(firstAllusion);
+      if (anchorNode) {
+        expanded.pinned.add(id);            // 锚定中：截断之外的诗强制上图
+      } else {
+        const firstAllusion = (adj.allusionsByPoem.get(id) || [])[0];
+        if (firstAllusion) setAnchor(firstAllusion);
+      }
     }
     expanded.poems.add(id);
     showPoem(id);
