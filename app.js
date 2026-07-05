@@ -239,16 +239,23 @@ function nodeClass(d) {
 
 function toggle(set, id) { set.has(id) ? set.delete(id) : set.add(id); }
 
-/* 可锚定节点（典故/诗人）的统一点击语义：锚定 / 点自己退出 / 链式展开 */
+/* 可锚定节点（典故/诗人）的统一点击语义：无锚→锚定；点锚自己：有展开先收拢回
+   锚定视图（一步步退），干净时才退回总览；点其他→链式展开 */
 function anchorableClick(id, set, showFn) {
   if (!anchorNode) {
     setAnchor(id);
     selectedId = id;
     showFn(id);
   } else if (id === anchorNode) {
-    setAnchor(null);
-    selectedId = null;
-    panel.innerHTML = HINT_HTML;
+    if (expanded.allusions.size || expanded.poems.size || expanded.poets.size) {
+      clearExploration();
+      selectedId = id;
+      showFn(id);
+    } else {
+      setAnchor(null);
+      selectedId = null;
+      panel.innerHTML = HINT_HTML;
+    }
   } else {
     toggle(set, id);
     selectedId = id;
