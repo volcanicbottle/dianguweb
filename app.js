@@ -52,6 +52,9 @@ const POET_CAP = 50;         // 大诗人锚定时图上最多画的诗数（按
 let poetShown = POET_CAP;    // 「再显示」按钮可逐批加大
 let nodesById = null;                 // id -> 图节点（O(1) 查找）
 let overviewIds = null;               // 总览枢纽星 id 集（数据静态，只算一次）
+let maxOverviewCount = 1;             // 总览节点最大用典数（大小按 sqrt 归一到此）
+const OV_MINR = 22, OV_MAXR = 54;     // 总览节点半径范围（仅总览生效；锚定后用原逻辑）
+                                      // 22 保证多数 3 字典名能整放，4+ 字小节点才截断
 
 function pushTo(map, key, val) {
   if (!map.has(key)) map.set(key, []);
@@ -65,9 +68,9 @@ Promise.all([
   GRAPH = g;
   DETAILS = d;
   nodesById = new Map(g.nodes.map(n => [n.id, n]));
-  overviewIds = new Set(g.nodes
-    .filter(n => n.type === "allusion" && n.count >= OVERVIEW_MIN)
-    .map(n => n.id));
+  const ovNodes = g.nodes.filter(n => n.type === "allusion" && n.count >= OVERVIEW_MIN);
+  overviewIds = new Set(ovNodes.map(n => n.id));
+  maxOverviewCount = Math.max(1, ...ovNodes.map(n => n.count));
   for (const e of g.edges) {
     if (e.source.startsWith("a:")) {
       pushTo(adj.poemsByAllusion, e.source, e.target);
@@ -207,8 +210,16 @@ function setAnchor(id) {
   svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
 }
 
+/* 总览：枢纽大小只按用典数（sqrt 使面积∝用典数），不掺名字长度 */
+function overviewRadius(count) {
+  const lo = Math.sqrt(OVERVIEW_MIN), hi = Math.sqrt(maxOverviewCount);
+  const t = hi > lo ? (Math.sqrt(count) - lo) / (hi - lo) : 0;
+  return OV_MINR + (OV_MAXR - OV_MINR) * Math.max(0, Math.min(1, t));
+}
+
 function radius(d) {
-  if (isHub(d)) {
+  if (!anchorNode && isHub(d)) return overviewRadius(d.count);   // 总览用量-大小
+  if (isHub(d)) {                                                 // 锚定后保持原逻辑
     const fit = shortLabel(d).length * 6 + 8;
     return Math.min(40, Math.max(12 + d.count * 2.5, fit));
   }
@@ -253,23 +264,15 @@ function render(nodes, links) {
 
   const node = gNodes.selectAll("g.node").data(nodes, d => d.id);
   node.exit().remove();
-  const enter = node.enter().append("g").attr("class", "node")
+  const enter = node.enter().append("g")
     .on("click", onNodeClick).call(dragger());
-  enter.append("circle").attr("r", d => radius(d));
-  enter.append("text")
-    .attr("dy", d => isCentered(d) ? 0 : radius(d) + 12)
-    .each(function (d) {
-      const el = d3.select(this);
-      const label = d.type === "allusion" ? shortLabel(d) : d.label;
-      el.text(label);
-      if (isCentered(d)) {
-        const r = radius(d);
-        const fs = Math.min(12, Math.floor((2 * r - 8) / Math.max(1, label.length)));
-        el.attr("dominant-baseline", "central").attr("font-size", Math.max(8, fs));
-      }
-    });
+  enter.append("circle");
+  enter.append("text");
+  /* 半径与文字每次渲染都刷新（节点跨总览/锚定持续存在时也随上下文更新） */
   const nodeSel = enter.merge(node).attr("class", nodeClass)
     .classed("dim", d => focus && !focus.has(d.id));
+  nodeSel.select("circle").attr("r", d => radius(d));
+  nodeSel.select("text").attr("dy", d => isCentered(d) ? 0 : radius(d) + 12).each(setNodeLabel);
   renderCrumb();
 
   sim.on("tick", () => {
@@ -278,6 +281,23 @@ function render(nodes, links) {
       .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
   });
+}
+
+/* 节点文字：总览枢纽固定字号+截断「…」；其余（锚定枢纽/诗人）缩字号塞满 */
+function setNodeLabel(d) {
+  const el = d3.select(this);
+  const label = d.type === "allusion" ? shortLabel(d) : d.label;
+  if (!isCentered(d)) { el.text(label); return; }
+  const r = radius(d);
+  if (!anchorNode && isHub(d)) {
+    const fs = Math.max(11, Math.min(16, Math.round(r * 0.4)));
+    const fit = Math.max(1, Math.floor((2 * r - 6) / (fs + 0.5)));
+    el.text(label.length > fit ? label.slice(0, Math.max(1, fit - 1)) + "…" : label)
+      .attr("dominant-baseline", "central").attr("font-size", fs);
+  } else {
+    const fs = Math.min(12, Math.floor((2 * r - 8) / Math.max(1, label.length)));
+    el.text(label).attr("dominant-baseline", "central").attr("font-size", Math.max(8, fs));
+  }
 }
 
 function nodeClass(d) {
