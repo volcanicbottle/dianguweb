@@ -53,8 +53,8 @@ let poetShown = POET_CAP;    // 「再显示」按钮可逐批加大
 let nodesById = null;                 // id -> 图节点（O(1) 查找）
 let overviewIds = null;               // 总览枢纽星 id 集（数据静态，只算一次）
 let maxOverviewCount = 1;             // 总览节点最大用典数（大小按 √ 归一到此）
-const OV_MINR = 22, OV_MAXR = 54;     // 总览气泡半径范围（仅总览生效；锚定后用原 radius）
-                                      // 22 保证多数 3 字典名整放，4+ 字小圈才截断
+const OV_MINR = 22, OV_MAXR = 70;     // 总览气泡半径范围（仅总览生效；锚定后用原 radius）
+                                      // 22 保证多数 3 字典名整放；70 让高频典明显撑大、拉开大小差
 
 function pushTo(map, key, val) {
   if (!map.has(key)) map.set(key, []);
@@ -280,12 +280,20 @@ function render(nodes, links) {
   nodeSel.select("text").attr("dy", d => isCentered(d) ? 0 : radius(d) + 12).each(setNodeLabel);
   renderCrumb();
 
-  sim.on("tick", () => {
+  const draw = () => {
     linkSel
       .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
       .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
-  });
+  };
+  sim.on("tick", draw);
+  if (packing) {
+    /* 总览：先在后台把团块跑稳再画出来，避免一堆气泡入场乱晃；
+       预推后 alpha 已衰减到接近 0，内部计时器停转，故手动画一次定格 */
+    sim.stop();
+    for (let i = 0; i < 260; i++) sim.tick();
+    draw();
+  }
 }
 
 /* 节点文字：总览气泡固定字号+装不下截断「…」；其余（锚定枢纽/诗人）缩字号塞满 */
