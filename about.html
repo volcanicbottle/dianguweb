@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>关于 · 用典典故星图</title>
+<meta name="description" content="「用典」典故星图的项目介绍：数据来源、标注方法与反馈方式。">
+<link rel="canonical" href="https://volcanicbottle.github.io/dianguweb/about.html">
+<style>
+:root { --paper:#f5efe2; --paper-light:#fbf7ec; --ink:#3d3a33; --ink-faint:#7a7361;
+        --cinnabar:#8c1f28; --border:#e2d8bf; }
+* { box-sizing:border-box; margin:0; }
+body { background:var(--paper); color:var(--ink); line-height:2;
+       font-family:"Songti SC","Noto Serif CJK SC","Source Han Serif SC",serif; }
+.wrap { max-width:640px; margin:0 auto; padding:40px 24px 80px; }
+h1 { color:var(--cinnabar); font-weight:normal; font-size:28px; letter-spacing:4px; margin-bottom:4px; }
+.sub { color:var(--ink-faint); font-size:13px; margin-bottom:28px; }
+h2 { color:var(--cinnabar); font-weight:normal; font-size:18px; margin:28px 0 6px;
+     border-bottom:1px solid var(--border); padding-bottom:4px; letter-spacing:2px; }
+p { margin:8px 0; font-size:15px; }
+a { color:var(--cinnabar); }
+.back { display:inline-block; margin-top:36px; padding:8px 18px;
+        border:1px solid var(--border); border-radius:2px; text-decoration:none; color:var(--ink-faint); }
+.back:hover { color:var(--cinnabar); border-color:var(--cinnabar); }
+.num { color:var(--cinnabar); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>用 典</h1>
+<p class="sub">典故星图 · 哪些诗用了这个典</p>
+
+<h2>这是什么</h2>
+<p>一张交互式的唐诗宋词用典地图。首页把三千余个典故按被使用的次数聚成星图——圆越大，
+用它的诗越多；点开任何一个典故，就能看到历代哪些诗篇化用了它、化在哪一句。
+也可以从诗人进入，纵览一位诗人笔下的全部用典。</p>
+
+<h2>数据规模</h2>
+<p>目前收录典故词条 <span class="num">一万余</span>（图上展示被诗句实际使用的
+<span class="num">三千余</span>个）、唐宋诗词 <span class="num">九千余首</span>、
+诗句与典故的对应关联 <span class="num">六千余条</span>，仍在持续扩充。</p>
+
+<h2>数据从哪里来</h2>
+<p>典故词条与出处原文取自典故类工具书的整理；诗词文本以《唐诗三百首》《宋词三百首》等选本
+与开源语料库 <a href="https://github.com/chinese-poetry/chinese-poetry" rel="noopener">chinese-poetry</a>
+为底本。诗句与典故的关联由词典匹配与大语言模型逐句研判相结合产生，重要选篇经人工复核。
+机器参与的标注难免有误，欢迎指正。</p>
+
+<h2>如何反馈</h2>
+<p>每个典故与诗的详情栏底部都有「报错」入口，会预填成一条
+<a href="https://github.com/volcanicbottle/dianguweb/issues" rel="noopener">GitHub Issue</a>；
+也可以直接到仓库提出建议。</p>
+
+<a class="back" href="./">← 回到星图</a>
+</div>
+</body>
+</html>

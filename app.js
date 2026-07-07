@@ -81,8 +81,13 @@ Promise.all([
     }
   }
   buildSearchIndex();
-  update();
-  fitVisible();          // 总览团块比屏幕大，载入后缩放适配
+  const target = parseHash();
+  if (target) {
+    openFromHash(target);        // 直达链接：#a:1 / #o:12 / #p:123 打开即定位
+  } else {
+    update();
+    fitVisible();                // 总览团块比屏幕大，载入后缩放适配
+  }
 }).catch(err => {
   document.getElementById("panel-content").innerHTML =
     `<p class="hint">数据加载失败：${err}</p>`;
@@ -157,6 +162,36 @@ function clearExploration() {
 
 /* 诗的用典数（大诗人截断排序用） */
 function poemDeg(p) { return (adj.allusionsByPoem.get(p) || []).length; }
+
+/* ── URL 直达：#a:1/#o:12/#p:123 ↔ 当前锚定/选中，可分享可收藏 ── */
+function parseHash() {
+  const m = location.hash.match(/^#([aop]:\d+)$/);
+  return m && nodesById.has(m[1]) ? m[1] : null;
+}
+function syncHash() {
+  const want = selectedId || anchorNode || "";
+  const cur = location.hash.replace(/^#/, "");
+  if (cur === want) return;
+  history.replaceState(null, "", want ? "#" + want : location.pathname + location.search);
+}
+/* 从链接进入：典故/诗人直接锚定（分享语义=看这个典/这个人），诗走 gotoNode */
+function openFromHash(target) {
+  if (target.startsWith("p:")) { gotoNode(target); return; }
+  setAnchor(target);
+  selectedId = target;
+  (target.startsWith("o:") ? showPoet : showAllusion)(target);
+  update();
+  fitVisible();
+}
+window.addEventListener("hashchange", () => {
+  const target = parseHash();
+  if (target && target !== (selectedId || anchorNode)) openFromHash(target);
+  else if (!location.hash && anchorNode) {
+    setAnchor(null); selectedId = null;
+    panel.innerHTML = HINT_HTML;
+    update(); fitVisible();
+  }
+});
 
 /* 位置指示：总览 › 锚定 › 选中项；前两级可点回退 */
 const crumbEl = document.getElementById("crumb");
@@ -235,6 +270,7 @@ function update() {
     .filter(e => vis.has(e.source) && vis.has(e.target))
     .map(e => ({ source: e.source, target: e.target }));
   render(nodes, links);
+  syncHash();
 }
 
 function render(nodes, links) {

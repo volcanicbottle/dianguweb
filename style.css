@@ -88,8 +88,9 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
 #search-results li.poet-hit { color: var(--poet-purple); font-weight: 600; }
 #search-results li.poet-hit .sub { color: var(--poet-purple); opacity: 0.75; }
 
-/* 描边按钮共性（回到初始/典故目录/报错提交） */
-#reset, #catalog-btn, #fb-send, #poet-more {
+/* 描边按钮共性（回到初始/典故目录/关于/报错提交） */
+#about-link { text-decoration: none; }
+#reset, #catalog-btn, #about-link, #fb-send, #poet-more {
   padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -99,7 +100,7 @@ header h1 { color: var(--cinnabar); font-size: 24px; letter-spacing: 6px; font-w
   font-size: 13px;
   cursor: pointer;
 }
-#reset:hover, #catalog-btn:hover, #fb-send:hover, #poet-more:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
+#reset:hover, #catalog-btn:hover, #about-link:hover, #fb-send:hover, #poet-more:hover { color: var(--cinnabar); border-color: var(--cinnabar); }
 
 main { flex: 1; display: flex; min-height: 0; position: relative; }
 
