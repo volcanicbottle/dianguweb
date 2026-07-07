@@ -52,9 +52,9 @@ const POET_CAP = 50;         // 大诗人锚定时图上最多画的诗数（按
 let poetShown = POET_CAP;    // 「再显示」按钮可逐批加大
 let nodesById = null;                 // id -> 图节点（O(1) 查找）
 let overviewIds = null;               // 总览枢纽星 id 集（数据静态，只算一次）
-let maxOverviewCount = 1;             // 总览节点最大用典数（大小按 sqrt 归一到此）
-const OV_MINR = 22, OV_MAXR = 54;     // 总览节点半径范围（仅总览生效；锚定后用原逻辑）
-                                      // 22 保证多数 3 字典名能整放，4+ 字小节点才截断
+let maxOverviewCount = 1;             // 总览节点最大用典数（大小按 √ 归一到此）
+const OV_MINR = 22, OV_MAXR = 54;     // 总览气泡半径范围（仅总览生效；锚定后用原 radius）
+                                      // 22 保证多数 3 字典名整放，4+ 字小圈才截断
 
 function pushTo(map, key, val) {
   if (!map.has(key)) map.set(key, []);
@@ -82,6 +82,7 @@ Promise.all([
   }
   buildSearchIndex();
   update();
+  fitVisible();          // 总览团块比屏幕大，载入后缩放适配
 }).catch(err => {
   document.getElementById("panel-content").innerHTML =
     `<p class="hint">数据加载失败：${err}</p>`;
@@ -177,7 +178,7 @@ crumbEl.addEventListener("click", (ev) => {
   if (c === "root") {
     setAnchor(null); selectedId = null;
     panel.innerHTML = HINT_HTML;
-    update();
+    update(); fitVisible();
   } else if (c === "anchor" && anchorNode) {
     clearExploration(); selectedId = anchorNode;
     if (anchorNode.startsWith("o:")) showPoet(anchorNode); else showAllusion(anchorNode);
@@ -210,7 +211,7 @@ function setAnchor(id) {
   svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
 }
 
-/* 总览：枢纽大小只按用典数（sqrt 使面积∝用典数），不掺名字长度 */
+/* 总览圆堆积：气泡大小只按用典数（√ 使面积∝用典数），不掺名字长度 */
 function overviewRadius(count) {
   const lo = Math.sqrt(OVERVIEW_MIN), hi = Math.sqrt(maxOverviewCount);
   const t = hi > lo ? (Math.sqrt(count) - lo) / (hi - lo) : 0;
@@ -218,8 +219,8 @@ function overviewRadius(count) {
 }
 
 function radius(d) {
-  if (!anchorNode && isHub(d)) return overviewRadius(d.count);   // 总览用量-大小
-  if (isHub(d)) {                                                 // 锚定后保持原逻辑
+  if (!anchorNode && isHub(d)) return overviewRadius(d.count);   // 总览：用量-大小
+  if (isHub(d)) {                                                 // 锚定后：原逻辑
     const fit = shortLabel(d).length * 6 + 8;
     return Math.min(40, Math.max(12 + d.count * 2.5, fit));
   }
@@ -239,13 +240,17 @@ function update() {
 function render(nodes, links) {
   const [W, H] = dims();
   if (sim) sim.stop();
+  const packing = !anchorNode;   // 总览=圆堆积；锚定=原力导向
   sim = d3.forceSimulation(nodes)
     .force("link", d3.forceLink(links).id(d => d.id).distance(90).strength(0.5))
-    .force("charge", d3.forceManyBody().strength(d => isHub(d) ? -60 - d.count * 8 : d.type === "poet" ? -60 : -30))
-    .force("x", d3.forceX(W / 2).strength(0.03))
-    .force("y", d3.forceY(H / 2).strength(0.035))
+    .force("charge", d3.forceManyBody().strength(d =>
+      packing ? -8                                     // 总览：微弱斥力，圆间留小缝隙不紧贴
+      : isHub(d) ? -60 - d.count * 8 : d.type === "poet" ? -60 : -30))
+    .force("x", d3.forceX(W / 2).strength(packing ? 0.28 : 0.03))   // 总览：强向心，挤成团块
+    .force("y", d3.forceY(H / 2).strength(packing ? 0.28 : 0.035))
     .force("collide", d3.forceCollide()
-      .radius(d => isCentered(d) ? radius(d) + 6 : Math.max(18, shortLabel(d).length * 5.5))
+      .radius(d => packing ? radius(d) + 2                          // 总览：半径+2px 小缝隙
+        : isCentered(d) ? radius(d) + 6 : Math.max(18, shortLabel(d).length * 5.5))
       .strength(1).iterations(2));
   sim.alpha(0.5);
 
@@ -283,7 +288,7 @@ function render(nodes, links) {
   });
 }
 
-/* 节点文字：总览枢纽固定字号+截断「…」；其余（锚定枢纽/诗人）缩字号塞满 */
+/* 节点文字：总览气泡固定字号+装不下截断「…」；其余（锚定枢纽/诗人）缩字号塞满 */
 function setNodeLabel(d) {
   const el = d3.select(this);
   const label = d.type === "allusion" ? shortLabel(d) : d.label;
@@ -571,10 +576,18 @@ function gotoNode(id) {
 
 /* 等布局稳定后，缩放视野装下全部可见节点（只缩小不放大），避免展开后跑出画布 */
 let focusTimer = null;
+/* 缩放视野装下全部可见节点。轮询等布局稳定（alpha 降下来）再 fit——
+   小图（锚定）settle 快、总览大团块 settle 慢，都能等到排稳；用户交互（zoom start）会清掉轮询 */
 function fitVisible() {
   clearTimeout(focusTimer);
-  focusTimer = setTimeout(() => {
+  let waited = 0;
+  const tryFit = () => {
     if (!sim) return;
+    if (sim.alpha() > 0.06 && waited < 3200) {     // 未稳且未超时 → 继续等
+      waited += 150;
+      focusTimer = setTimeout(tryFit, 150);
+      return;
+    }
     const [W, H] = dims();
     const ns = sim.nodes(), pad = 60;
     const x0 = d3.min(ns, d => d.x) - pad, x1 = d3.max(ns, d => d.x) + pad;
@@ -584,7 +597,8 @@ function fitVisible() {
     const t = d3.zoomIdentity
       .translate(W / 2 - k * (x0 + x1) / 2, H / 2 - k * (y0 + y1) / 2).scale(k);
     svg.transition().duration(600).call(zoom.transform, t);
-  }, 700);
+  };
+  focusTimer = setTimeout(tryFit, 300);
 }
 
 /* ── 搜索（典故名 / 别名 / 诗名） ── */
@@ -650,5 +664,5 @@ document.getElementById("reset").addEventListener("click", () => {
   selectedId = null;
   searchInput.value = "";
   panel.innerHTML = HINT_HTML;
-  update();
+  update(); fitVisible();
 });
