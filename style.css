@@ -155,9 +155,7 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 .node.midstar text, .node.smallstar text { fill: var(--ink-faint); font-size: 10px; letter-spacing: 0; }
 .node.bigstar text { font-size: 12px; }
 
-/* 分级显名：远观只现大星名（字号按 1/k 补偿，--fs 由 app.js 缩放时写入），
-   中距加现中星名，近景全现 */
-.far .node.bigstar text { font-size: var(--fs, 40px); }
+/* 分级显名：远观只现大星名（自然字号，随缩放与图一起长大），中距加现中星名，近景全现 */
 .far .node.midstar text, .far .node.smallstar text { display: none; }
 .mid .node.smallstar text { display: none; }
 

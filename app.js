@@ -34,8 +34,6 @@ const zoom = d3.zoom().scaleExtent([K_MIN, K_MAX]).clickDistance(TAP_SLOP)
     gRoot.attr("transform", ev.transform);
     const k = ev.transform.k;                      // 分级显名：远观现大星名，逐级放大逐级显现
     gRoot.classed("far", k < 0.55).classed("mid", k >= 0.55 && k < 1.2);
-    /* 远观时大星名按 1/k 补偿字号，屏幕上保持可读（约 13px） */
-    gRoot.style("--fs", Math.min(48, 13 / k).toFixed(1) + "px");
   });
 svg.call(zoom);
 
@@ -134,6 +132,29 @@ function computeConstellations() {
   starClusterList = finalGroups;
   starClusterOf = new Map();
   finalGroups.forEach((gp, ci) => { for (const id of gp) starClusterOf.set(id, ci); });
+  /* 伙修补：标签传播会把一些星留在与本官零共现的官里（伙伴中途集体改派）。
+     扫描改派到共现最强的官，跑几轮收敛；全无共现的孤点不动 */
+  for (let round = 0; round < 3; round++) {
+    let moved = 0;
+    for (const id of ids) {
+      const own = starClusterOf.get(id);
+      const w = new Map();
+      for (const [b, wt] of cooc.get(id) || []) {
+        const cb = starClusterOf.get(b);
+        w.set(cb, (w.get(cb) || 0) + wt);
+      }
+      if ((w.get(own) || 0) > 0) continue;      // 与本官有共现，不搬家
+      let best = -1, bw = 0;
+      for (const [cb, wt] of w) if (wt > bw) { bw = wt; best = cb; }
+      if (best >= 0) { starClusterOf.set(id, best); moved++; }
+    }
+    if (!moved) break;
+  }
+  const regrouped = new Map();
+  for (const id of ids) pushTo(regrouped, starClusterOf.get(id), id);
+  starClusterList = [...regrouped.values()];
+  starClusterOf = new Map();
+  starClusterList.forEach((gp, ci) => { for (const id of gp) starClusterOf.set(id, ci); });
 }
 
 /* 竖排名字向下伸出，d3 自带 forceCollide 只支持以节点为圆心（7.9 无 .y 访问器）。
@@ -182,10 +203,12 @@ function forceCollideOffset(radiusFn, offsetFn) {
 }
 
 /* 星官骨架线：布局定稿后，每颗星连同官中「有共现且空间最近」的一颗，
-   距离过远宁可不连——线短不交叉，自然勾出星官轮廓（真实星座的连法） */
+   距离过远宁可不连；再做穿星剔除（线擦过第三颗星不连）与交叉剔除（相交去长边），
+   线短不穿不交叉，自然勾出星官轮廓（真实星座的连法） */
 function skeletonLines() {
   const MAXLEN2 = 200 * 200;               // 超过 200px 的"近邻"不算近邻
-  const lines = [], seen = new Set();
+  let lines = [];
+  const seen = new Set();
   for (const id of overviewIds) {
     const ci = starClusterOf.get(id);
     const a = nodeCache.get(id);
@@ -204,7 +227,45 @@ function skeletonLines() {
       if (!seen.has(k)) { seen.add(k); lines.push({ source: a, target: nodeCache.get(best), ci }); }
     }
   }
-  return lines;
+  /* 穿星剔除：线段从第三颗星身上擦过（距线 ≤ 星半径+2px）会误导成"也连了它"，去掉 */
+  const pts = [...overviewIds].map(id => nodeCache.get(id)).filter(Boolean);
+  const segDist = (p, l) => {
+    const x1 = l.source.x, y1 = l.source.y, x2 = l.target.x, y2 = l.target.y;
+    const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy;
+    let t = len2 ? ((p.x - x1) * dx + (p.y - y1) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const px = x1 + t * dx - p.x, py = y1 + t * dy - p.y;
+    return Math.sqrt(px * px + py * py);
+  };
+  lines = lines.filter(l => !pts.some(p =>
+    p !== l.source && p !== l.target && segDist(p, l) < radius(p) + 2));
+  /* 交叉剔除：两段线相交，去掉较长的那条 */
+  const segCross = (a, b) => {
+    const x1 = a.source.x, y1 = a.source.y, x2 = a.target.x, y2 = a.target.y;
+    const x3 = b.source.x, y3 = b.source.y, x4 = b.target.x, y4 = b.target.y;
+    const d = (x2 - x1) * (y4 - y3) - (x4 - x3) * (y2 - y1);
+    if (!d) return false;
+    const t = ((x3 - x1) * (y4 - y3) - (x4 - x3) * (y3 - y1)) / d;
+    const u = ((x3 - x1) * (y2 - y1) - (x2 - x1) * (y3 - y1)) / d;
+    return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
+  };
+  const segLen2 = l => (l.source.x - l.target.x) ** 2 + (l.source.y - l.target.y) ** 2;
+  const removed = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (removed.has(i)) continue;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (removed.has(j)) continue;
+      const a = lines[i], b = lines[j];
+      if (a.source === b.source || a.source === b.target ||
+          a.target === b.source || a.target === b.target) continue;
+      if (segCross(a, b)) {
+        const dropLonger = segLen2(a) >= segLen2(b);
+        removed.add(dropLonger ? i : j);
+        if (dropLonger) break;                 // i 已删，不必再比
+      }
+    }
+  }
+  return lines.filter((_, i) => !removed.has(i));
 }
 
 /* 亲缘线显隐：悬停优先，其次选中星所在的官；皆无则全隐 */
@@ -456,7 +517,7 @@ function render(nodes, links) {
         .sort((a, b) => b.count - a.count);            // 主星（用量最大）居中
       const c = centers[ci];
       stars.forEach((n, j) => {
-        const a = j * 2.39996, r = 52 * Math.sqrt(j + 0.5);
+        const a = j * 2.39996, r = 40 * Math.sqrt(j + 0.5);
         homes.set(n.id, { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) });
       });
     });
@@ -910,6 +971,8 @@ document.getElementById("reset").addEventListener("click", () => {
   panel.innerHTML = HINT_HTML;
   update(); fitVisible();
 });
+
+
 
 
 
