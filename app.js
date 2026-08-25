@@ -32,15 +32,17 @@ const zoom = d3.zoom().scaleExtent([K_MIN, K_MAX]).clickDistance(TAP_SLOP)
   .on("start", () => clearTimeout(focusTimer))
   .on("zoom", (ev) => {
     gRoot.attr("transform", ev.transform);
-    const k = ev.transform.k;                      // 分级显名：远观只留亮星名，逐级放大逐级显现
-    gRoot.classed("far", k < 0.9).classed("mid", k >= 0.9 && k < 1.8);
+    const k = ev.transform.k;                      // 分级显名：远观现大星名，逐级放大逐级显现
+    gRoot.classed("far", k < 0.55).classed("mid", k >= 0.55 && k < 1.2);
+    /* 远观时大星名按 1/k 补偿字号，屏幕上保持可读（约 13px） */
+    gRoot.style("--fs", Math.min(48, 13 / k).toFixed(1) + "px");
   });
 svg.call(zoom);
 
 let GRAPH = null, DETAILS = null, sim = null;
 let selectedId = null;
 let anchorNode = null;            // 锚定的典故或诗人；null = 枢纽总览
-const OVERVIEW_MIN = 3;               // 总览只放挂诗数≥此值的枢纽星（目录/搜索可达全部）
+const OVERVIEW_MIN = 2;               // 总览只放挂诗数≥此值的枢纽星（目录/搜索可达全部）
 const BIG_STAR_MIN = 10;              // 总览大星门槛：≥此值名字写进圆内，否则小星点、名在点下
 const HINT_HTML = `<p class="hint">点击典故星查看用它的诗；悬停可亮出它所在星官的亲缘连线；点击诗展开它的其他典故；「典故目录」与搜索可达全部典故。</p>`;
 
@@ -179,18 +181,27 @@ function forceCollideOffset(radiusFn, offsetFn) {
   return force;
 }
 
-/* 星官亲缘线：每颗星记一条「与同官中共现最强的邻居」的线（去重），
-   带上官号 ci，悬停/选中某星时只亮出该官的线 */
-function constellationLines() {
+/* 星官骨架线：布局定稿后，每颗星连同官中「有共现且空间最近」的一颗，
+   距离过远宁可不连——线短不交叉，自然勾出星官轮廓（真实星座的连法） */
+function skeletonLines() {
+  const MAXLEN2 = 200 * 200;               // 超过 200px 的"近邻"不算近邻
   const lines = [], seen = new Set();
   for (const id of overviewIds) {
     const ci = starClusterOf.get(id);
-    let best = null, bw = 0;
-    for (const [b, wt] of starCooc.get(id) || [])
-      if (starClusterOf.get(b) === ci && wt > bw) { bw = wt; best = b; }
-    if (best) {
+    const a = nodeCache.get(id);
+    if (!a) continue;
+    let best = null, bd = Infinity;
+    for (const [b] of starCooc.get(id) || []) {
+      if (starClusterOf.get(b) !== ci) continue;
+      const nb = nodeCache.get(b);
+      if (!nb) continue;
+      const dx = a.x - nb.x, dy = a.y - nb.y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = b; }
+    }
+    if (best && bd < MAXLEN2) {
       const k = id < best ? id + "|" + best : best + "|" + id;
-      if (!seen.has(k)) { seen.add(k); lines.push({ source: id, target: best, ci }); }
+      /* 总览无线力，线端直接存节点对象（draw 要读 .x/.y） */
+      if (!seen.has(k)) { seen.add(k); lines.push({ source: a, target: nodeCache.get(best), ci }); }
     }
   }
   return lines;
@@ -204,7 +215,8 @@ function refreshKin() {
   gLinks.selectAll("line.kin").classed("show", d => ci != null && d.ci === ci);
 }
 
-/* 各星官的天区：以官为单位跑一次小型力模拟（大官占大位），得簇心坐标 */
+/* 各星官的天区：以官为单位跑一次小型力模拟（大官占大位），得簇心坐标；
+   间距拉大到官与官各自成岛，横向略拉宽 */
 function clusterCenters(W, H) {
   const meta = starClusterList.map((gp, i) => ({
     r: 18 + Math.sqrt(gp.length) * 15,
@@ -212,12 +224,13 @@ function clusterCenters(W, H) {
     y: H / 2 + Math.sin(i * 2.39996) * 40 * Math.sqrt(i + 0.5),
   }));
   const msim = d3.forceSimulation(meta)
-    .force("charge", d3.forceManyBody().strength(-180))
-    .force("x", d3.forceX(W / 2).strength(0.06))
-    .force("y", d3.forceY(H / 2).strength(0.08))
-    .force("collide", d3.forceCollide(d => d.r + 14).strength(1))
+    .force("charge", d3.forceManyBody().strength(-420))
+    .force("x", d3.forceX(W / 2).strength(0.04))
+    .force("y", d3.forceY(H / 2).strength(0.055))
+    .force("collide", d3.forceCollide(d => d.r + 60).strength(1))
     .stop();
   for (let k = 0; k < 300; k++) msim.tick();
+  for (const m of meta) m.x = W / 2 + (m.x - W / 2) * 1.25;   // 横向拉宽，贴合宽屏
   return meta;
 }
 
@@ -412,7 +425,7 @@ function radius(d) {
   if (d.type === "allusion") {
     const hi = Math.sqrt(maxOverviewCount);
     const t = hi > 1 ? Math.max(0, Math.min(1, (Math.sqrt(d.count) - 1) / (hi - 1))) : 0;
-    return anchorNode ? 4 + 8 * t : 3 + 11 * t;      // 锚定 4–12；总览 3–14
+    return anchorNode ? 4 + 8 * t : 2.5 + 11.5 * t;      // 锚定 4–12；总览 2.5–14
   }
   if (d.type === "poet") return Math.min(10, 4 + Math.sqrt(d.count) * 1.2);
   return 3.5;   // 诗
@@ -431,50 +444,49 @@ function update() {
 function render(nodes, links) {
   const [W, H] = dims();
   if (sim) sim.stop();
-  const packing = !anchorNode;   // 总览=星座散布；锚定=原力导向
-  let centers = null;
-  if (packing) {
-    links = kinLines = constellationLines();   // 总览的亲缘线默认隐去，悬停/选中才亮
-    centers = clusterCenters(W, H);
-  }
+  const packing = !anchorNode;   // 总览=编目布星；锚定=原力导向
+  const centers = packing ? clusterCenters(W, H) : null;
   const centerOf = d => (centers && centers[starClusterOf.get(d.id)]) || { x: W / 2, y: H / 2 };
+  /* 总览改「编目式」：主星居官中心，众星沿金角螺线环绕就位（纯几何，每次加载一致），
+     力导向只剩「弹回星位+防字叠字」，不再决定星图长什么样 */
+  const homes = new Map();
+  if (packing) {
+    starClusterList.forEach((gp, ci) => {
+      const stars = gp.map(id => nodeCache.get(id)).filter(Boolean)
+        .sort((a, b) => b.count - a.count);            // 主星（用量最大）居中
+      const c = centers[ci];
+      stars.forEach((n, j) => {
+        const a = j * 2.39996, r = 52 * Math.sqrt(j + 0.5);
+        homes.set(n.id, { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) });
+      });
+    });
+  }
+  const homeOf = d => homes.get(d.id) || centerOf(d);
   sim = d3.forceSimulation(nodes)
-    .force("link", d3.forceLink(links).id(d => d.id)
-      .distance(d => packing ? radius(d.source) + radius(d.target) + 26 : 90)
-      .strength(packing ? 0.25 : 0.5))
     .force("charge", d3.forceManyBody().strength(d =>
-      packing ? -(radius(d) * 3 + 12)                  // 总览：官内适度相斥，星点不贴
+      packing ? 0
       : isHub(d) ? -60 - d.count * 8 : d.type === "poet" ? -60 : -30))
-    .force("x", packing ? d3.forceX(d => centerOf(d).x).strength(0.12)   // 总览：星归各官天区
+    .force("x", packing ? d3.forceX(d => homeOf(d).x).strength(0.2)    // 总览：弹回编目星位
       : d3.forceX(W / 2).strength(0.03))
-    .force("y", packing ? d3.forceY(d => centerOf(d).y).strength(0.12)
+    .force("y", packing ? d3.forceY(d => homeOf(d).y).strength(0.2)
       : d3.forceY(H / 2).strength(0.035))
     .force("collide", forceCollideOffset(             // 竖排名字：碰撞圆心下移到名字正中
       d => isVLabel(d) ? shortLabel(d).length * 6 + 8
         : Math.max(radius(d) + 5, shortLabel(d).length * 5.6),
       d => isVLabel(d) ? radius(d) + 14 + shortLabel(d).length * 6 : 0));
+  if (!packing)
+    sim.force("link", d3.forceLink(links).id(d => d.id).distance(90).strength(0.5));
   sim.alpha(0.5);
 
-  const link = gLinks.selectAll("line")
-    .data(links, d => (d.source.id || d.source) + "|" + (d.target.id || d.target));
-  link.exit().remove();
-  const linkSel = link.enter().append("line").attr("class", "link").merge(link)
-    .classed("kin", packing);
   /* 聚焦模式：有选中节点时，非其邻域的节点与连线变淡 */
   const focus = selectedId && nodes.some(n => n.id === selectedId)
     ? new Set([selectedId, ...neighbors(selectedId)]) : null;
-  linkSel.classed("dim", d => {
-    if (!focus) return false;
-    const s = d.source.id || d.source, t = d.target.id || d.target;
-    return !(focus.has(s) && focus.has(t));
-  });
-  refreshKin();
 
   const node = gNodes.selectAll("g.node").data(nodes, d => d.id);
   node.exit().remove();
   const enter = node.enter().append("g")
     .on("click", onNodeClick)
-    .on("mouseenter", (ev, d) => {          // 悬停亮出该星官的亲缘线
+    .on("mouseenter", (ev, d) => {          // 悬停加浓该星官的骨架线
       if (anchorNode) return;
       hoverCluster = starClusterOf.get(d.id) ?? null;
       refreshKin();
@@ -492,19 +504,40 @@ function render(nodes, links) {
   nodeSel.select("text").attr("transform", d => `translate(0,${radius(d) + 14})`).each(setNodeLabel);
   renderCrumb();
 
+  const bindLinks = ls => {
+    const link = gLinks.selectAll("line")
+      .data(ls, d => (d.source.id || d.source) + "|" + (d.target.id || d.target));
+    link.exit().remove();
+    return link.enter().append("line").attr("class", "link").merge(link)
+      .classed("kin", packing)
+      .classed("dim", d => {
+        if (!focus) return false;
+        const s = d.source.id || d.source, t = d.target.id || d.target;
+        return !(focus.has(s) && focus.has(t));
+      });
+  };
+
+  let linkSel = null;
   const draw = () => {
-    linkSel
+    if (linkSel) linkSel
       .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
       .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
     nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
   };
   sim.on("tick", draw);
+
   if (packing) {
-    /* 总览：先在后台把布局跑稳再画出来，避免满屏气泡入场乱晃；
-       预推后 alpha 已衰减到接近 0，内部计时器停转，故手动画一次定格 */
+    /* 总览：先无连线把布局跑稳，再按最终位置生成星官骨架线（只连空间近邻），
+       避免「连最强共现」的长线横穿整个星区成蛛网；预推后计时器停转，手动画一次定格 */
     sim.stop();
     for (let i = 0; i < 260; i++) sim.tick();
+    links = kinLines = skeletonLines();
+    linkSel = bindLinks(links);
+    refreshKin();
     draw();
+  } else {
+    linkSel = bindLinks(links);
+    refreshKin();
   }
 }
 
@@ -877,4 +910,8 @@ document.getElementById("reset").addEventListener("click", () => {
   panel.innerHTML = HINT_HTML;
   update(); fitVisible();
 });
+
+
+
+
 

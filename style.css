@@ -126,9 +126,9 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 
 /* ── 星图节点 ── */
 .link { stroke: var(--link-line); stroke-width: 1; }
-/* 星官亲缘线：淡墨细线，默认隐去，悬停/选中某星时亮出该官 */
-.link.kin { stroke: #b8ab88; stroke-width: 0.8; opacity: 0; }
-.link.kin.show { opacity: 0.55; }
+/* 星官骨架线：常显极淡以勾勒星官轮廓，悬停/选中某星时该官加浓 */
+.link.kin { stroke: #b8ab88; stroke-width: 1; opacity: 0.35; }
+.link.kin.show { opacity: 0.6; }
 
 .node { cursor: pointer; }
 .node text {
@@ -155,7 +155,9 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 .node.midstar text, .node.smallstar text { fill: var(--ink-faint); font-size: 10px; letter-spacing: 0; }
 .node.bigstar text { font-size: 12px; }
 
-/* 分级显名：远观只留大星名，中距现中星名，近看全现 */
+/* 分级显名：远观只现大星名（字号按 1/k 补偿，--fs 由 app.js 缩放时写入），
+   中距加现中星名，近景全现 */
+.far .node.bigstar text { font-size: var(--fs, 40px); }
 .far .node.midstar text, .far .node.smallstar text { display: none; }
 .mid .node.smallstar text { display: none; }
 
