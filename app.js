@@ -280,12 +280,12 @@ function render(nodes, links) {
   sim = d3.forceSimulation(nodes)
     .force("link", d3.forceLink(links).id(d => d.id).distance(90).strength(0.5))
     .force("charge", d3.forceManyBody().strength(d =>
-      packing ? -8                                     // 总览：微弱斥力，圆间留小缝隙不紧贴
+      packing ? -radius(d) * 4                         // 总览：斥力随圆大小，大星推得开、散成星野
       : isHub(d) ? -60 - d.count * 8 : d.type === "poet" ? -60 : -30))
-    .force("x", d3.forceX(W / 2).strength(packing ? 0.28 : 0.03))   // 总览：强向心，挤成团块
-    .force("y", d3.forceY(H / 2).strength(packing ? 0.28 : 0.035))
+    .force("x", d3.forceX(W / 2).strength(0.03))   // 向心仅拢住不散逸
+    .force("y", d3.forceY(H / 2).strength(packing ? 0.03 : 0.035))
     .force("collide", d3.forceCollide()
-      .radius(d => packing ? radius(d) + 2                          // 总览：半径+2px 小缝隙
+      .radius(d => packing ? radius(d) + 10                         // 总览：半径+10px 留明显缝隙
         : isCentered(d) ? radius(d) + 6 : Math.max(18, shortLabel(d).length * 5.5))
       .strength(1).iterations(2));
   sim.alpha(0.5);
@@ -324,7 +324,7 @@ function render(nodes, links) {
   };
   sim.on("tick", draw);
   if (packing) {
-    /* 总览：先在后台把团块跑稳再画出来，避免一堆气泡入场乱晃；
+    /* 总览：先在后台把布局跑稳再画出来，避免满屏气泡入场乱晃；
        预推后 alpha 已衰减到接近 0，内部计时器停转，故手动画一次定格 */
     sim.stop();
     for (let i = 0; i < 260; i++) sim.tick();
