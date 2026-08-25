@@ -30,14 +30,19 @@ const K_MIN = 0.3, K_MAX = 4;  // 画布缩放范围，fitVisible 的缩小下�
 
 const zoom = d3.zoom().scaleExtent([K_MIN, K_MAX]).clickDistance(TAP_SLOP)
   .on("start", () => clearTimeout(focusTimer))
-  .on("zoom", (ev) => gRoot.attr("transform", ev.transform));
+  .on("zoom", (ev) => {
+    gRoot.attr("transform", ev.transform);
+    const k = ev.transform.k;                      // 分级显名：远观只留亮星名，逐级放大逐级显现
+    gRoot.classed("far", k < 0.9).classed("mid", k >= 0.9 && k < 1.8);
+  });
 svg.call(zoom);
 
 let GRAPH = null, DETAILS = null, sim = null;
 let selectedId = null;
 let anchorNode = null;            // 锚定的典故或诗人；null = 枢纽总览
 const OVERVIEW_MIN = 3;               // 总览只放挂诗数≥此值的枢纽星（目录/搜索可达全部）
-const HINT_HTML = `<p class="hint">点击典故星查看用它的诗；点击诗展开它的其他典故；「典故目录」与搜索可达全部典故。</p>`;
+const BIG_STAR_MIN = 10;              // 总览大星门槛：≥此值名字写进圆内，否则小星点、名在点下
+const HINT_HTML = `<p class="hint">点击典故星查看用它的诗；悬停可亮出它所在星官的亲缘连线；点击诗展开它的其他典故；「典故目录」与搜索可达全部典故。</p>`;
 
 const nodeCache = new Map();          // id -> 节点对象（保留 x/y）
 const adj = {
@@ -53,12 +58,167 @@ let poetShown = POET_CAP;    // 「再显示」按钮可逐批加大
 let nodesById = null;                 // id -> 图节点（O(1) 查找）
 let overviewIds = null;               // 总览枢纽星 id 集（数据静态，只算一次）
 let maxOverviewCount = 1;             // 总览节点最大用典数（大小按 √ 归一到此）
-const OV_MINR = 22, OV_MAXR = 70;     // 总览气泡半径范围（仅总览生效；锚定后用原 radius）
-                                      // 22 保证多数 3 字典名整放；70 让高频典明显撑大、拉开大小差
+let starClusterOf = new Map();        // 总览星 -> 星官序号（computeConstellations 算）
+let starClusterList = [];             // 星官 -> [星 id]
+let starCooc = new Map();             // 总览星 -> Map(同官邻居 -> 共现权重)
+const MID_STAR_MIN = 5;               // 中星门槛：总览放大一档即显名；以下为小星
+let kinLines = [];                    // 星官亲缘线（含官号 ci，悬停/选中才显现）
 
 function pushTo(map, key, val) {
   if (!map.has(key)) map.set(key, []);
   map.get(key).push(val);
+}
+
+/* ── 总览星座：仿敦煌星图，按「同被一首诗使用」的共现把枢纽星分官（标签传播），
+   大官再拆一次；固定种子随机，每次加载结果一致。573 星实测约 1ms ── */
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* 在 ids 子集内跑标签传播，返回 [[id…], …]；权重取自全局共现表 */
+function splitLP(ids, cooc, rand) {
+  const idset = new Set(ids);
+  const label = new Map(ids.map(id => [id, id]));
+  const order = [...ids];
+  for (let it = 0; it < 30; it++) {
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    let moved = 0;
+    for (const a of order) {
+      const cnt = new Map();
+      for (const [b, wt] of cooc.get(a) || []) {
+        if (!idset.has(b)) continue;
+        const lb = label.get(b);
+        cnt.set(lb, (cnt.get(lb) || 0) + wt);
+      }
+      let best = label.get(a), bw = 0;
+      for (const [lb, c] of cnt) if (c > bw || (c === bw && lb < best)) { bw = c; best = lb; }
+      if (best !== label.get(a)) { label.set(a, best); moved++; }
+    }
+    if (!moved) break;
+  }
+  const groups = new Map();
+  for (const [id, lb] of label) pushTo(groups, lb, id);
+  return [...groups.values()];
+}
+
+function computeConstellations() {
+  const ids = [...overviewIds];
+  const cooc = new Map(ids.map(id => [id, new Map()]));
+  for (const alist of adj.allusionsByPoem.values()) {
+    const hs = alist.filter(a => overviewIds.has(a));
+    for (let i = 0; i < hs.length; i++)
+      for (let j = i + 1; j < hs.length; j++) {
+        const a = hs[i], b = hs[j];
+        cooc.get(a).set(b, (cooc.get(a).get(b) || 0) + 1);
+        cooc.get(b).set(a, (cooc.get(b).get(a) || 0) + 1);
+      }
+  }
+  starCooc = cooc;
+  const rand = mulberry32(20240825);
+  const CLUSTER_CAP = 36;                    // 超过此规模的官再拆一轮，免得又堆成小圆盘
+  const finalGroups = [];
+  for (const gp of splitLP(ids, cooc, rand))
+    if (gp.length > CLUSTER_CAP) finalGroups.push(...splitLP(gp, cooc, rand));
+    else finalGroups.push(gp);
+  starClusterList = finalGroups;
+  starClusterOf = new Map();
+  finalGroups.forEach((gp, ci) => { for (const id of gp) starClusterOf.set(id, ci); });
+}
+
+/* 竖排名字向下伸出，d3 自带 forceCollide 只支持以节点为圆心（7.9 无 .y 访问器）。
+   改造一版碰撞圆心可偏移的碰撞力：四叉树 + 逐对推挤，让每颗星占住「点+名」整条区域 */
+function forceCollideOffset(radiusFn, offsetFn) {
+  let nodes = [];
+  const radii = [], offs = [];
+  function force() {
+    for (let k = 0; k < 3; ++k) {
+      const tree = d3.quadtree(nodes, d => d.x, d => d.y + offs[d.index])
+        .visitAfter(q => {
+          if (q.data) return q.r = radii[q.data.index];
+          for (let i = q.r = 0; i < 4; ++i) if (q[i] && q[i].r > q.r) q.r = q[i].r;
+        });
+      for (const node of nodes) {
+        const ri = radii[node.index], ri2 = ri * ri;
+        const xi = node.x + node.vx, yi = node.y + node.vy + offs[node.index];
+        tree.visit((quad, x0, y0, x1, y1) => {
+          const data = quad.data, rj = quad.r, r = ri + rj;
+          if (data) {
+            if (data.index > node.index) {
+              let x = xi - data.x - data.vx;
+              let y = yi - data.y - data.vy - offs[data.index];
+              let l = x * x + y * y;
+              if (l < r * r) {
+                if (x === 0) { x = (Math.random() - 0.5) * 1e-6; l += x * x; }
+                if (y === 0) { y = (Math.random() - 0.5) * 1e-6; l += y * y; }
+                l = (r - (l = Math.sqrt(l))) / l;
+                const share = (rj * rj) / (ri2 + rj * rj);
+                node.vx += x * l * share; node.vy += y * l * share;
+                data.vx -= x * l * (1 - share); data.vy -= y * l * (1 - share);
+              }
+            }
+            return;
+          }
+          return x0 > xi + r || x1 < xi - r || y0 > yi + r || y1 < yi - r;
+        });
+      }
+    }
+  }
+  force.initialize = ns => {
+    nodes = ns;
+    for (const n of ns) { radii[n.index] = radiusFn(n); offs[n.index] = offsetFn(n); }
+  };
+  return force;
+}
+
+/* 星官亲缘线：每颗星记一条「与同官中共现最强的邻居」的线（去重），
+   带上官号 ci，悬停/选中某星时只亮出该官的线 */
+function constellationLines() {
+  const lines = [], seen = new Set();
+  for (const id of overviewIds) {
+    const ci = starClusterOf.get(id);
+    let best = null, bw = 0;
+    for (const [b, wt] of starCooc.get(id) || [])
+      if (starClusterOf.get(b) === ci && wt > bw) { bw = wt; best = b; }
+    if (best) {
+      const k = id < best ? id + "|" + best : best + "|" + id;
+      if (!seen.has(k)) { seen.add(k); lines.push({ source: id, target: best, ci }); }
+    }
+  }
+  return lines;
+}
+
+/* 亲缘线显隐：悬停优先，其次选中星所在的官；皆无则全隐 */
+let hoverCluster = null;
+function refreshKin() {
+  const ci = hoverCluster != null ? hoverCluster
+    : (selectedId != null && starClusterOf.has(selectedId) ? starClusterOf.get(selectedId) : null);
+  gLinks.selectAll("line.kin").classed("show", d => ci != null && d.ci === ci);
+}
+
+/* 各星官的天区：以官为单位跑一次小型力模拟（大官占大位），得簇心坐标 */
+function clusterCenters(W, H) {
+  const meta = starClusterList.map((gp, i) => ({
+    r: 18 + Math.sqrt(gp.length) * 15,
+    x: W / 2 + Math.cos(i * 2.39996) * 40 * Math.sqrt(i + 0.5),
+    y: H / 2 + Math.sin(i * 2.39996) * 40 * Math.sqrt(i + 0.5),
+  }));
+  const msim = d3.forceSimulation(meta)
+    .force("charge", d3.forceManyBody().strength(-180))
+    .force("x", d3.forceX(W / 2).strength(0.06))
+    .force("y", d3.forceY(H / 2).strength(0.08))
+    .force("collide", d3.forceCollide(d => d.r + 14).strength(1))
+    .stop();
+  for (let k = 0; k < 300; k++) msim.tick();
+  return meta;
 }
 
 Promise.all([
@@ -80,6 +240,7 @@ Promise.all([
       pushTo(adj.poemsByPoet, e.target, e.source);
     }
   }
+  computeConstellations();
   buildSearchIndex();
   const target = parseHash();
   if (target) {
@@ -95,8 +256,8 @@ Promise.all([
 
 function isHub(d) { return d.type === "allusion" && d.count >= 2; }
 
-/* 名字写在圆内、按大圆排布的节点（枢纽典故与诗人） */
-function isCentered(d) { return isHub(d) || d.type === "poet"; }
+/* 竖排名字的节点（枢纽典故与诗人）；诗的名字为横排 */
+function isVLabel(d) { return isHub(d) || d.type === "poet"; }
 
 /* 节点的图上邻居（按 id 前缀分派到对应邻接表） */
 function neighbors(id) {
@@ -246,21 +407,15 @@ function setAnchor(id) {
   svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
 }
 
-/* 总览圆堆积：气泡大小只按用典数（√ 使面积∝用典数），不掺名字长度 */
-function overviewRadius(count) {
-  const lo = Math.sqrt(OVERVIEW_MIN), hi = Math.sqrt(maxOverviewCount);
-  const t = hi > lo ? (Math.sqrt(count) - lo) / (hi - lo) : 0;
-  return OV_MINR + (OV_MAXR - OV_MINR) * Math.max(0, Math.min(1, t));
-}
-
+/* 全站星点：实心点，半径按用典数 √ 归一连续变化（面积∝用量），不掺名字长度 */
 function radius(d) {
-  if (!anchorNode && isHub(d)) return overviewRadius(d.count);   // 总览：用量-大小
-  if (isHub(d)) {                                                 // 锚定后：原逻辑
-    const fit = shortLabel(d).length * 6 + 8;
-    return Math.min(40, Math.max(12 + d.count * 2.5, fit));
+  if (d.type === "allusion") {
+    const hi = Math.sqrt(maxOverviewCount);
+    const t = hi > 1 ? Math.max(0, Math.min(1, (Math.sqrt(d.count) - 1) / (hi - 1))) : 0;
+    return anchorNode ? 4 + 8 * t : 3 + 11 * t;      // 锚定 4–12；总览 3–14
   }
-  if (d.type === "poet") return Math.min(24, Math.max(13, 8 + Math.sqrt(d.count) * 1.6));
-  return d.type === "allusion" ? 6 : 5;
+  if (d.type === "poet") return Math.min(10, 4 + Math.sqrt(d.count) * 1.2);
+  return 3.5;   // 诗
 }
 
 function update() {
@@ -276,24 +431,35 @@ function update() {
 function render(nodes, links) {
   const [W, H] = dims();
   if (sim) sim.stop();
-  const packing = !anchorNode;   // 总览=圆堆积；锚定=原力导向
+  const packing = !anchorNode;   // 总览=星座散布；锚定=原力导向
+  let centers = null;
+  if (packing) {
+    links = kinLines = constellationLines();   // 总览的亲缘线默认隐去，悬停/选中才亮
+    centers = clusterCenters(W, H);
+  }
+  const centerOf = d => (centers && centers[starClusterOf.get(d.id)]) || { x: W / 2, y: H / 2 };
   sim = d3.forceSimulation(nodes)
-    .force("link", d3.forceLink(links).id(d => d.id).distance(90).strength(0.5))
+    .force("link", d3.forceLink(links).id(d => d.id)
+      .distance(d => packing ? radius(d.source) + radius(d.target) + 26 : 90)
+      .strength(packing ? 0.25 : 0.5))
     .force("charge", d3.forceManyBody().strength(d =>
-      packing ? -radius(d) * 4                         // 总览：斥力随圆大小，大星推得开、散成星野
+      packing ? -(radius(d) * 3 + 12)                  // 总览：官内适度相斥，星点不贴
       : isHub(d) ? -60 - d.count * 8 : d.type === "poet" ? -60 : -30))
-    .force("x", d3.forceX(W / 2).strength(0.03))   // 向心仅拢住不散逸
-    .force("y", d3.forceY(H / 2).strength(packing ? 0.03 : 0.035))
-    .force("collide", d3.forceCollide()
-      .radius(d => packing ? radius(d) + 10                         // 总览：半径+10px 留明显缝隙
-        : isCentered(d) ? radius(d) + 6 : Math.max(18, shortLabel(d).length * 5.5))
-      .strength(1).iterations(2));
+    .force("x", packing ? d3.forceX(d => centerOf(d).x).strength(0.12)   // 总览：星归各官天区
+      : d3.forceX(W / 2).strength(0.03))
+    .force("y", packing ? d3.forceY(d => centerOf(d).y).strength(0.12)
+      : d3.forceY(H / 2).strength(0.035))
+    .force("collide", forceCollideOffset(             // 竖排名字：碰撞圆心下移到名字正中
+      d => isVLabel(d) ? shortLabel(d).length * 6 + 8
+        : Math.max(radius(d) + 5, shortLabel(d).length * 5.6),
+      d => isVLabel(d) ? radius(d) + 14 + shortLabel(d).length * 6 : 0));
   sim.alpha(0.5);
 
   const link = gLinks.selectAll("line")
     .data(links, d => (d.source.id || d.source) + "|" + (d.target.id || d.target));
   link.exit().remove();
-  const linkSel = link.enter().append("line").attr("class", "link").merge(link);
+  const linkSel = link.enter().append("line").attr("class", "link").merge(link)
+    .classed("kin", packing);
   /* 聚焦模式：有选中节点时，非其邻域的节点与连线变淡 */
   const focus = selectedId && nodes.some(n => n.id === selectedId)
     ? new Set([selectedId, ...neighbors(selectedId)]) : null;
@@ -302,18 +468,28 @@ function render(nodes, links) {
     const s = d.source.id || d.source, t = d.target.id || d.target;
     return !(focus.has(s) && focus.has(t));
   });
+  refreshKin();
 
   const node = gNodes.selectAll("g.node").data(nodes, d => d.id);
   node.exit().remove();
   const enter = node.enter().append("g")
-    .on("click", onNodeClick).call(dragger());
-  enter.append("circle");
+    .on("click", onNodeClick)
+    .on("mouseenter", (ev, d) => {          // 悬停亮出该星官的亲缘线
+      if (anchorNode) return;
+      hoverCluster = starClusterOf.get(d.id) ?? null;
+      refreshKin();
+    })
+    .on("mouseleave", () => { hoverCluster = null; refreshKin(); })
+    .call(dragger());
+  enter.append("circle").attr("class", "hit");    // 隐形热区，小点也好按
+  enter.append("circle").attr("class", "dot");
   enter.append("text");
   /* 半径与文字每次渲染都刷新（节点跨总览/锚定持续存在时也随上下文更新） */
   const nodeSel = enter.merge(node).attr("class", nodeClass)
     .classed("dim", d => focus && !focus.has(d.id));
-  nodeSel.select("circle").attr("r", d => radius(d));
-  nodeSel.select("text").attr("dy", d => isCentered(d) ? 0 : radius(d) + 12).each(setNodeLabel);
+  nodeSel.select("circle.hit").attr("r", d => Math.max(12, radius(d) + 4));
+  nodeSel.select("circle.dot").attr("r", d => radius(d));
+  nodeSel.select("text").attr("transform", d => `translate(0,${radius(d) + 14})`).each(setNodeLabel);
   renderCrumb();
 
   const draw = () => {
@@ -332,26 +508,17 @@ function render(nodes, links) {
   }
 }
 
-/* 节点文字：总览气泡固定字号+装不下截断「…」；其余（锚定枢纽/诗人）缩字号塞满 */
+/* 节点文字：一律排在点下（典故/诗人竖排、诗横排，由 CSS 控制字号颜色） */
 function setNodeLabel(d) {
-  const el = d3.select(this);
-  const label = d.type === "allusion" ? shortLabel(d) : d.label;
-  if (!isCentered(d)) { el.text(label); return; }
-  const r = radius(d);
-  if (!anchorNode && isHub(d)) {
-    const fs = Math.max(11, Math.min(16, Math.round(r * 0.4)));
-    const fit = Math.max(1, Math.floor((2 * r - 6) / (fs + 0.5)));
-    el.text(label.length > fit ? label.slice(0, Math.max(1, fit - 1)) + "…" : label)
-      .attr("dominant-baseline", "central").attr("font-size", fs);
-  } else {
-    const fs = Math.min(12, Math.floor((2 * r - 8) / Math.max(1, label.length)));
-    el.text(label).attr("dominant-baseline", "central").attr("font-size", Math.max(8, fs));
-  }
+  d3.select(this).attr("dominant-baseline", null).attr("font-size", null)
+    .text(d.type === "allusion" ? shortLabel(d) : d.label);
 }
 
 function nodeClass(d) {
   let cls = "node " + d.type;
   if (isHub(d)) cls += " hub";
+  if (!anchorNode && d.type === "allusion")
+    cls += d.count >= BIG_STAR_MIN ? " bigstar" : d.count >= MID_STAR_MIN ? " midstar" : " smallstar";
   if (d.id === anchorNode) cls += " anchor";
   if (d.id === selectedId) cls += " selected";
   return cls;
@@ -710,3 +877,4 @@ document.getElementById("reset").addEventListener("click", () => {
   panel.innerHTML = HINT_HTML;
   update(); fitVisible();
 });
+

@@ -126,6 +126,9 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
 
 /* ── 星图节点 ── */
 .link { stroke: var(--link-line); stroke-width: 1; }
+/* 星官亲缘线：淡墨细线，默认隐去，悬停/选中某星时亮出该官 */
+.link.kin { stroke: #b8ab88; stroke-width: 0.8; opacity: 0; }
+.link.kin.show { opacity: 0.55; }
 
 .node { cursor: pointer; }
 .node text {
@@ -134,20 +137,36 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
   pointer-events: none;
   text-anchor: middle;
 }
-.node.allusion.hub circle { fill: var(--paper-light); stroke: var(--cinnabar); stroke-width: 1.5; }
-.node.allusion.hub text { fill: var(--cinnabar); writing-mode: vertical-rl; letter-spacing: 1px; }
-.node.allusion.anchor circle { fill: var(--paper); }
-.node.allusion circle { fill: var(--ink); }
-.node.poem circle { fill: var(--paper-light); stroke: var(--poem-green); stroke-width: 1.8; }
+.node circle.hit { fill: none; pointer-events: all; }   /* 隐形热区，小点也好按 */
+
+/* 全站星点化：实心点，颜色辨类型（典故朱砂/诗青绿/诗人紫），大小表用量 */
+.node.allusion circle.dot { fill: var(--cinnabar); }
+.node.poem circle.dot { fill: var(--poem-green); }
+.node.poet circle.dot { fill: var(--poet-purple); }
+.node.allusion text { fill: var(--cinnabar); }
 .node.poem text { fill: var(--poem-green); }
-.node.poet circle { fill: var(--paper-light); stroke: var(--poet-purple); stroke-width: 1.5; }
-.node.poet text { fill: var(--poet-purple); writing-mode: vertical-rl; letter-spacing: 1px; }
-.node.selected circle { stroke: var(--cinnabar); stroke-width: 2.5; }
+.node.poet text { fill: var(--poet-purple); }
+.node.allusion.hub text, .node.poet text { writing-mode: vertical-rl; letter-spacing: 1px; text-anchor: start; }
+
+/* 总览星等：大星浓、小星淡；中小星名字墨色从淡 */
+.node.bigstar circle.dot { opacity: 0.95; }
+.node.midstar circle.dot { opacity: 0.65; }
+.node.smallstar circle.dot { opacity: 0.4; }
+.node.midstar text, .node.smallstar text { fill: var(--ink-faint); font-size: 10px; letter-spacing: 0; }
+.node.bigstar text { font-size: 12px; }
+
+/* 分级显名：远观只留大星名，中距现中星名，近看全现 */
+.far .node.midstar text, .far .node.smallstar text { display: none; }
+.mid .node.smallstar text { display: none; }
+
+/* 选中与锚定：点外加一圈淡环 */
+.node.selected circle.dot, .node.anchor circle.dot { stroke: var(--cinnabar); stroke-width: 2; }
 
 /* 聚焦模式：选中节点后，非邻域的节点与连线变淡 */
 .node, .link { transition: opacity .35s; }
 .node.dim { opacity: 0.18; }
 .link.dim { opacity: 0.12; }
+.link.kin.show.dim { opacity: 0.1; }
 
 /* ── 右栏详情 ── */
 #panel {
