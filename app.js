@@ -42,7 +42,7 @@ let selectedId = null;
 let anchorNode = null;            // 锚定的典故或诗人；null = 枢纽总览
 const OVERVIEW_MIN = 2;               // 总览只放挂诗数≥此值的枢纽星（目录/搜索可达全部）
 const BIG_STAR_MIN = 10;              // 总览大星门槛：≥此值名字写进圆内，否则小星点、名在点下
-const HINT_HTML = `<p class="hint">点击典故星查看用它的诗；悬停可亮出它所在星官的亲缘连线；点击诗展开它的其他典故；「典故目录」与搜索可达全部典故。</p>`;
+const HINT_HTML = `<p class="hint">点击典故星，查看用它的诗；点击诗，展开它的其他典故。悬停可亮出同星官的亲缘连线。典故目录与搜索可达全部典故。</p>`;
 
 const nodeCache = new Map();          // id -> 节点对象（保留 x/y）
 const adj = {
