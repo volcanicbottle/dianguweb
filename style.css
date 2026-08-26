@@ -176,6 +176,15 @@ main { flex: 1; display: flex; min-height: 0; position: relative; }
   overflow-y: auto;
 }
 #panel-content { padding: 18px; font-size: 14px; line-height: 1.9; }
+
+/* 手机全屏面板的返回条（桌面端隐藏；样式见底部媒体查询） */
+#panel-close { display: none; }
+
+/* 手机面板升起的动画（桌面端不用，但 @keyframes 需全局可见） */
+@keyframes panel-up {
+  from { transform: translateY(30px); opacity: .3; }
+  to { transform: none; opacity: 1; }
+}
 #panel-content .hint { color: var(--ink-faint); }
 #panel-content h2 { color: var(--cinnabar); font-size: 20px; font-weight: normal; margin-bottom: 2px; }
 #panel-content .meta { color: var(--ink-faint); font-size: 12px; margin-bottom: 10px; }
@@ -214,6 +223,30 @@ mark.verse {
     max-height: 45%;
     border-left: none;
     border-top: 1px solid var(--border);
+  }
+  /* 点开详情/目录：面板升起为全屏覆盖层，顶部留返回条；收起只盖回星图，不动选中状态 */
+  #panel.open {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    max-height: none;
+    border-top: none;
+    animation: panel-up .22s ease;
+  }
+  #panel.open #panel-close {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    width: 100%;
+    padding: 12px 18px;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--paper-light);
+    color: var(--cinnabar);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
   }
 }
 

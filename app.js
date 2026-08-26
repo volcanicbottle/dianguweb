@@ -423,7 +423,7 @@ window.addEventListener("hashchange", () => {
   if (target && target !== (selectedId || anchorNode)) openFromHash(target);
   else if (!location.hash && anchorNode) {
     setAnchor(null); selectedId = null;
-    panel.innerHTML = HINT_HTML;
+    shutPanel();
     update(); fitVisible();
   }
 });
@@ -447,7 +447,7 @@ crumbEl.addEventListener("click", (ev) => {
   const c = ev.target.dataset.crumb;
   if (c === "root") {
     setAnchor(null); selectedId = null;
-    panel.innerHTML = HINT_HTML;
+    shutPanel();
     update(); fitVisible();
   } else if (c === "anchor" && anchorNode) {
     clearExploration(); selectedId = anchorNode;
@@ -635,7 +635,7 @@ function anchorableClick(id, set, showFn) {
     } else {
       setAnchor(null);
       selectedId = null;
-      panel.innerHTML = HINT_HTML;
+      shutPanel();
     }
   } else {
     toggle(set, id);
@@ -695,6 +695,17 @@ function dragger() {
 
 /* ── 详情栏 ── */
 const panel = document.getElementById("panel-content");
+const panelWrap = document.getElementById("panel");
+
+/* 手机上详情/目录打开时，面板升起为全屏覆盖层（桌面端 .open 无样式，无副作用） */
+function openPanel() {
+  panelWrap.classList.add("open");
+  panelWrap.scrollTop = 0;
+}
+function shutPanel() {
+  panelWrap.classList.remove("open");
+  panel.innerHTML = HINT_HTML;
+}
 
 /* 内容更新后把详情栏拉回视野（手机放大平移时在视野外；已可见则本身就是无操作） */
 function revealPanel() {
@@ -752,6 +763,7 @@ function showAllusion(id) {
   }
   html += feedbackHtml("典故 · " + a.title, id);
   panel.innerHTML = html;
+  openPanel();
 }
 
 function showPoem(id) {
@@ -801,6 +813,7 @@ function showPoem(id) {
   }
   html += feedbackHtml(`诗 · ${p.title}（${p.poet}）`, id);
   panel.innerHTML = html;
+  openPanel();
 }
 
 function showPoet(id) {
@@ -817,6 +830,7 @@ function showPoet(id) {
     html += `<input id="poet-filter" type="text" placeholder="输入诗题过滤…" aria-label="过滤诗题">`;
   html += `<div id="poet-list"></div>`;
   panel.innerHTML = html;
+  openPanel();
   const listEl = document.getElementById("poet-list");
   const renderList = (q) => {
     const hits = q ? o.poems.filter(p => p.title.includes(q)) : o.poems;
@@ -853,6 +867,7 @@ function showCatalog() {
   renderList("");
   document.getElementById("catalog-filter").addEventListener("input",
     debounce((ev) => renderList(ev.target.value.trim()), 120));
+  openPanel();
   revealPanel();
 }
 document.getElementById("catalog-btn").addEventListener("click", showCatalog);
@@ -994,8 +1009,13 @@ document.getElementById("reset").addEventListener("click", () => {
   setAnchor(null);
   selectedId = null;
   searchInput.value = "";
-  panel.innerHTML = HINT_HTML;
+  shutPanel();
   update(); fitVisible();
+});
+
+/* 手机全屏面板的返回条：只收起覆盖层，星图上的选中状态保留（回退用面包屑） */
+document.getElementById("panel-close").addEventListener("click", () => {
+  panelWrap.classList.remove("open");
 });
 
 
