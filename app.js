@@ -757,8 +757,31 @@ function showAllusion(id) {
 function showPoem(id) {
   const p = DETAILS.poems[id.slice(2)];
   if (!p) return;
+  /* 自源条目：某条出处与本诗共享 ≥2 个整句，说明出处就是本诗（本诗是源头
+     而非用典者），诗页不显示。注文通常只引相关一句（如五十弦的注引破阵子
+     一句），两句才够判定"出处即本诗"，避免误伤真典故。
+     整句按句号级切分（半句切分会误伤，如泊秦淮的后庭花：桂枝香注文引了
+     两个半句，但后庭花是真用典）；有的诗正文只有逗号没有句号（如枫桥夜泊），
+     退而用逗号切。出处里的【…】是异文标注，整段剔除，免得插断正句（乌衣巷） */
+  const bare = s => (s || "").replace(/【[^】]*】/g, "")
+    .replace(/[，。！？；：、　\s「」『』（）()《》〈〉…]/g, "");
+  let segs = (p.content || "").split(/[。！？；\n]/);
+  if (segs.filter(x => bare(x).length >= 5).length < 2)
+    segs = (p.content || "").split(/[。！？；，\n]/);
+  const poemLines = segs.map(bare).filter(x => x.length >= 5);
+  const isSelfOrigin = u => {
+    const a = DETAILS.allusions[u.id];
+    if (!a) return false;
+    return (a.sources || []).some(s => {
+      const sb = bare(s.text);
+      let share = 0;
+      for (const ln of poemLines) if (sb.includes(ln)) share++;
+      return share >= 2;
+    });
+  };
+  const usages = p.usages.filter(u => !isSelfOrigin(u));
   let body = esc(p.content);
-  for (const u of p.usages) {
+  for (const u of usages) {
     if (!u.verse) continue;
     const target = esc(u.verse);
     if (body.includes(target)) {
@@ -769,8 +792,8 @@ function showPoem(id) {
   let html = `<h2>${esc(p.title)}</h2>` +
     `<p class="meta">${esc(p.poet)} · ${esc(p.dynasty)}</p>` +
     `<p class="poem-body">${body}</p>` +
-    `<h3>本诗用典（${p.usages.length}）</h3>`;
-  for (const u of p.usages) {
+    `<h3>本诗用典（${usages.length}）</h3>`;
+  for (const u of usages) {
     html += gotoItem("a:" + u.id, u.title, verseMeta(u.verse));
   }
   html += feedbackHtml(`诗 · ${p.title}（${p.poet}）`, id);
