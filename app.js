@@ -757,9 +757,10 @@ function showAllusion(id) {
 function showPoem(id) {
   const p = DETAILS.poems[id.slice(2)];
   if (!p) return;
-  /* 自源条目：某条出处与本诗共享 ≥2 个整句，说明出处就是本诗（本诗是源头
-     而非用典者），诗页不显示。注文通常只引相关一句（如五十弦的注引破阵子
-     一句），两句才够判定"出处即本诗"，避免误伤真典故。
+  /* 自源条目：出处与本诗共享 ≥2 个整句，说明该出处就是本诗；全部出处都是
+     本诗自身时，才认定本诗是源头（而非用典者），诗页不显示。只要有一条独立
+     出处（如玉生烟另载戴叔伦语），仍算用典。注文通常只引相关一句（如五十弦
+     的注引破阵子一句），两句才够判定"出处即本诗"，避免误伤真典故。
      整句按句号级切分（半句切分会误伤，如泊秦淮的后庭花：桂枝香注文引了
      两个半句，但后庭花是真用典）；有的诗正文只有逗号没有句号（如枫桥夜泊），
      退而用逗号切。出处里的【…】是异文标注，整段剔除，免得插断正句（乌衣巷） */
@@ -772,7 +773,9 @@ function showPoem(id) {
   const isSelfOrigin = u => {
     const a = DETAILS.allusions[u.id];
     if (!a) return false;
-    return (a.sources || []).some(s => {
+    const srcs = a.sources || [];
+    if (!srcs.length) return false;
+    return srcs.every(s => {
       const sb = bare(s.text);
       let share = 0;
       for (const ln of poemLines) if (sb.includes(ln)) share++;
